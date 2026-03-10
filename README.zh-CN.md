@@ -6,65 +6,64 @@
 
 <p align="center">
   AI 驱动的 OpenClaw 宿主系统安全审计工具。<br>
-  23 条内置检测规则，9 个安全分类，可通过 Skill 扩展，支持 LLM 攻击链分析。
+  35 条内置检测规则，11 个安全分类，可通过 Skill 扩展，支持 24 个 LLM 提供商的攻击链分析。
 </p>
 
 <p align="center">
   不检查 OpenClaw 配置对不对，而是检查：<b>OpenClaw 装在你的系统上之后，你的系统还安全吗？</b>
 </p>
 
+<p align="center">
+  <a href="README.md">English</a>
+</p>
+
 ## 快速开始
 
 ```sh
-cargo build --release
+# 下载二进制文件（示例：macOS Apple Silicon）
+curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.3.0-darwin-arm64.tar.gz
+tar xzf claw-guard-v0.3.0-darwin-arm64.tar.gz
+chmod +x claw-guard
 
 # 完整审计（经典模式，无 LLM）
-./target/release/claw-guard --no-upload --no-analyze
+./claw-guard --no-upload --no-analyze
 
 # AI 审计（Anthropic）
 export CLAW_GUARD_API_KEY=sk-ant-xxx
-./target/release/claw-guard --no-upload
+./claw-guard --no-upload
 
-# AI 审计（OpenAI / Ollama）
-./target/release/claw-guard --no-upload --provider openai --api-key sk-xxx
-./target/release/claw-guard --no-upload --provider ollama --model llama3
+# AI 审计（OpenAI / Ollama / 24 个提供商）
+./claw-guard --no-upload --provider openai --model gpt-4o
+./claw-guard --no-upload --provider ollama --model llama3
+./claw-guard --no-upload --provider deepseek --model deepseek-chat
 
-# 只检查某个分类
-./target/release/claw-guard --no-upload --no-analyze --category gateway
+# 按分类过滤
+./claw-guard --no-upload --no-analyze --category cost
+./claw-guard --no-upload --no-analyze --category destructive
 
-# 加载社区 Skill
-./target/release/claw-guard --no-upload --no-analyze --skill-dir ./examples/skills
+# 列出所有支持的 LLM 提供商
+./claw-guard --list-providers
 
 # 列出所有规则 + Skill
-./target/release/claw-guard --list-rules --skill-dir ./examples/skills
+./claw-guard --list-rules
 
 # JSON 输出 / 保存报告
-./target/release/claw-guard --no-upload --no-analyze --json
-./target/release/claw-guard --no-upload --no-analyze --output report.json
+./claw-guard --no-upload --no-analyze --json
+./claw-guard --no-upload --no-analyze --output report.json
 ```
 
 ## 示例输出
 
 ```
-╔══════════════════════════════════════════════════╗
-║        claw-guard Security Audit Report         ║
-╚══════════════════════════════════════════════════╝
-
-  Host:     my-server  (linux)
-  Time:     2026-03-09T17:48:00+00:00
-  Version:  0.1.0
-  Score:    54/100  [██████████░░░░░░░░░░] Fair
-
-  Rules: 23 + 3 skills  |  Pass: 17  Fail: 6  Warn: 4  Skip: 8
-
-  !! 4 CRITICAL finding(s) !!
-  !  2 HIGH finding(s)
+  claw-guard v0.3.0 — my-server  (linux)
+  2026-03-10T17:00:00+00:00
 
   ── Category Breakdown ──
-  ✗ Credential Exposure             9 checks   5 fail   2 warn
-  ✗ Data Leak Detection             4 checks   1 fail   0 warn
-  ⚠ Network Exposure                4 checks   0 fail   1 warn
+  ✗ Credential Exposure             8 checks   6 fail   0 warn
+  ✗ Destructive Action Protection   4 checks   3 fail   1 warn
+  ✗ Cost Safety                     3 checks   2 fail   0 warn
   ✓ Gateway Configuration           4 checks   0 fail   0 warn
+  ✓ File System Security            6 checks   0 fail   0 warn
   ...
 
   ── Findings ──
@@ -73,22 +72,35 @@ export CLAW_GUARD_API_KEY=sk-ant-xxx
     evidence: path=~/.aws mode=755 name=aws_credentials
     fix: chmod 700 on credential directories.
 
+  ✗ [CRITICAL] CG-M001 (API cost limit not configured)
+    No API cost or rate limits configured.
+    fix: Set cost limits in openclaw.json.
+
   ── AI Analysis ──────────────────────────────────
 
   Summary:
   你的系统存在凭证窃取攻击链：~/.aws 全局可读，且 shell history
-  中出现 API 密钥模式。攻击者获得本地访问后可在数秒内提取
-  AWS 凭证。
+  中出现 API 密钥模式。
 
   Attack Chains:
-  1. [High] 通过 History 窃取凭证
-     CG-C001 + CG-D001 → AWS 账户接管
+  1. [High] 通过凭证泄露接管云账户
+     CG-C001 + CG-C003 + CG-S001 → AWS 账户接管
+  2. [High] 失控 Agent 造成财务损失
+     CG-M001 + CG-M003 + CG-X001 → 不可控 API 消费
 
   Priority Fixes:
   1. chmod 700 ~/.aws ~/.ssh ~/.docker
      ← 阻断凭证窃取链 (CG-C001)
 
   ─────────────────────────────────────────────────
+
+╔══════════════════════════════════════════════════╗
+║              Audit Result Summary                ║
+╚══════════════════════════════════════════════════╝
+  Score:    52/100  [██████████░░░░░░░░░░] Poor
+  Rules: 35  |  Pass: 24  Fail: 20  Warn: 5  Skip: 0
+  !! 9 CRITICAL finding(s) !!
+  !  6 HIGH finding(s)
 ```
 
 退出码：`0` 正常，`1` 存在 HIGH，`2` 存在 CRITICAL。适合 CI/CD 集成。
@@ -104,13 +116,38 @@ claw-guard 使用 LLM 进行深度分析——不只是 pass/fail，而是识别
 | **本地** (默认) | 使用你自己的 API Key，分析在本地执行 | 隐私优先、离线环境 |
 | **远程** | 将发现发送到 install9 平台分析 | 持续监控、历史趋势 |
 
-### 支持的 LLM 提供商（本地模式）
+### 支持的提供商（24 个）
+
+使用 `--list-providers` 查看所有提供商及其默认模型和 API 地址。
 
 | 提供商 | 参数 | 默认模型 |
 |--------|------|----------|
 | Anthropic | `--provider anthropic` | claude-sonnet-4-20250514 |
 | OpenAI | `--provider openai` | gpt-4o |
-| Ollama | `--provider ollama` | llama3 |
+| Ollama（本地） | `--provider ollama` | llama3 |
+| vLLM（本地） | `--provider vllm` | default |
+| OpenRouter | `--provider openrouter` | anthropic/claude-sonnet-4-20250514 |
+| Together AI | `--provider together` | meta-llama/Llama-3-70b-chat-hf |
+| Mistral | `--provider mistral` | mistral-large-latest |
+| DeepSeek | `--provider deepseek` | deepseek-chat |
+| NVIDIA | `--provider nvidia` | meta/llama-3.1-70b-instruct |
+| Moonshot（Kimi） | `--provider moonshot` | moonshot-v1-8k |
+| GLM（智谱 AI） | `--provider glm` | glm-4 |
+| Qwen（阿里通义） | `--provider qwen` | qwen-max |
+| MiniMax | `--provider minimax` | abab6.5s-chat |
+| Hugging Face | `--provider huggingface` | meta-llama/Llama-3-70b-chat-hf |
+| 千帆（百度） | `--provider qianfan` | ernie-4.0-8k |
+| Amazon Bedrock | `--provider bedrock` | anthropic.claude-sonnet-4-20250514-v1:0 |
+| Cloudflare AI Gateway | `--provider cloudflare` | @cf/meta/llama-3-8b-instruct |
+| Vercel AI Gateway | `--provider vercel` | gpt-4o |
+| LiteLLM | `--provider litellm` | gpt-4o |
+| Venice | `--provider venice` | llama-3.1-405b |
+| 小米 | `--provider xiaomi` | xiaomi-ai-large |
+| Z.AI | `--provider zai` | default |
+| Kilocode | `--provider kilocode` | default |
+| OpenCode Zen | `--provider opencode-zen` | default |
+
+支持通过 `--base-url` 使用自定义 OpenAI 兼容端点：
 
 ```sh
 # 本地模式 + Anthropic（默认）
@@ -120,12 +157,46 @@ claw-guard --no-upload
 # 本地模式 + Ollama（完全离线）
 claw-guard --no-upload --provider ollama --model llama3
 
+# 自定义端点
+claw-guard --no-upload --provider openai --base-url http://my-proxy:8080
+
 # 远程模式（发送到 install9 平台）
 claw-guard --mode remote --platform-id my-server-id
 
 # 跳过 AI 分析
 claw-guard --no-upload --no-analyze
 ```
+
+## 评分模型
+
+claw-guard 使用**加权分类通过率模型**（参考 AWS Security Hub / CIS Benchmarks）：
+
+- 11 个分类，每个分类有重要性权重（总计 = 100）
+- 分类内按严重级别加权计算通过率
+- 单个分类无法将总分拖至零分
+- 警告得 50% 分数，跳过得 80% 分数
+
+| 分类 | 权重 | 说明 |
+|------|------|------|
+| 沙箱隔离 | 15 | 最关键的安全控制 |
+| 凭证暴露 | 12 | 凭证窃取 → 完全沦陷 |
+| 网络暴露 | 12 | 网络暴露 → 远程攻击入口 |
+| 网关配置 | 10 | 网关认证 → 命令执行 |
+| 破坏性操作防护 | 10 | 防止 rm -rf / 数据丢失 |
+| 进程安全 | 10 | 进程沦陷 → 宿主接管 |
+| 费用安全 | 8 | API 滥用导致的财务风险 |
+| 数据泄露 | 8 | 数据外泄 |
+| 容器安全 | 5 | 容器逃逸 |
+| 插件安全 | 5 | 插件供应链攻击 |
+| 文件系统安全 | 5 | 文件权限问题 |
+
+| 分数 | 等级 |
+|------|------|
+| 90-100 | Excellent |
+| 75-89 | Good |
+| 60-74 | Fair |
+| 40-59 | Poor |
+| 0-39 | Critical |
 
 ## Skills 扩展
 
@@ -185,18 +256,28 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 | `name` | 是 | Skill 名称 |
 | `description` | 否 | 检查说明 |
 | `category` | 否 | 映射到 claw-guard 分类 (credential/network/plugin 等) |
-| `severity` | 否 | critical/high/medium/low/info (默认: medium) |
-| `id` | 否 | 规则 ID (默认: 自动生成) |
+| `severity` | 否 | critical/high/medium/low/info（默认: medium） |
+| `id` | 否 | 规则 ID（默认: 自动生成） |
 | `remediation` | 否 | 失败时的修复建议 |
-| `timeout` | 否 | 最大执行时间，秒 (默认: 30) |
+| `timeout` | 否 | 最大执行时间，秒（默认: 30） |
 
 **安全性：** Skill 命令执行时会剥离敏感环境变量（AWS 密钥、API Token 等），并强制超时。请只安装你信任的 Skill。
 
+### Skill 目录结构
+
+```
+~/.claw-guard/skills/
+├── check-npm-audit.md          # 单独 .md 文件
+├── check-git-secrets.md
+└── my-custom-check/
+    └── SKILL.md                # 或子目录中的 SKILL.md
+```
+
 ## 检测规则
 
-23 条内置规则，每条有唯一 ID（`CG-XNNN`）、分类、严重级别、修复建议。
+35 条内置规则，每条有唯一 ID（`CG-XNNN`）、分类、严重级别、修复建议。
 
-### Credential Exposure (CG-C)
+### 凭证暴露 (CG-C)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
@@ -204,7 +285,7 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 | CG-C002 | OpenClaw 配置文件安全（openclaw.json, .env, OAuth 凭证） | HIGH |
 | CG-C003 | 敏感环境变量暴露（50+ 已知 API Key 模式） | HIGH |
 
-### File System Security (CG-F)
+### 文件系统安全 (CG-F)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
@@ -212,45 +293,50 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 | CG-F002 | SSH 宿主密钥文件权限 | CRITICAL |
 | CG-F003 | 历史版本数据残留（~/.clawdbot 等旧目录） | MEDIUM |
 
-### Network Exposure (CG-N)
+### 网络暴露 (CG-N)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
 | CG-N001 | Gateway 绑定 0.0.0.0（通配监听） | HIGH |
 | CG-N002 | 异常外连检测 | HIGH |
 | CG-N003 | OpenClaw 端口全面扫描（18789-18899, 9222, 5900, 6080） | MEDIUM |
+| CG-N004 | 反弹 Shell / C2 工具检测 | CRITICAL |
+| CG-N005 | DNS 隧道数据外泄检测 | MEDIUM |
 
-### Process Security (CG-P)
+### 进程安全 (CG-P)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
-| CG-P001 | OpenClaw 以 root/SYSTEM 运行 | HIGH |
+| CG-P001 | 以 root/SYSTEM 权限运行 | HIGH |
 | CG-P002 | 子 Agent 危险标志（--yolo, bypassPermissions） | HIGH |
+| CG-P003 | 定时任务 / 计划任务审计 | HIGH |
+| CG-P004 | 异常子进程检测（矿机、扫描器、代理） | HIGH |
+| CG-P005 | 宿主入侵指标检测（SSH 密钥、隐藏文件、CPU 挖矿、登录爆破、二进制完整性） | CRITICAL |
 
-### Gateway Configuration (CG-G)
+### 网关配置 (CG-G)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
-| CG-G001 | Gateway auth mode = none（未认证 RCE） | CRITICAL |
+| CG-G001 | Gateway 认证模式 = none（未认证 RCE） | CRITICAL |
 | CG-G002 | 危险配置标志（allowInsecureAuth, dangerouslyDisable* 等） | CRITICAL |
 | CG-G003 | Secret Provider exec 路径安全 | HIGH |
 | CG-G004 | Gateway Token 强度 | HIGH |
 
-### Sandbox & Isolation (CG-S)
+### 沙箱隔离 (CG-S)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
 | CG-S001 | Sandbox 模式关闭（所有 exec 直接在宿主运行） | CRITICAL |
 | CG-S002 | Sandbox Docker 安全绕过标志 | HIGH |
 
-### Plugin & Extension Security (CG-K)
+### 插件安全 (CG-K)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
 | CG-K001 | 已安装插件清单审计（插件享有完整宿主权限） | HIGH |
 | CG-K002 | 插件目录写保护 | HIGH |
 
-### Data Leak Detection (CG-D)
+### 数据泄露检测 (CG-D)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
@@ -258,11 +344,28 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 | CG-D002 | 日志中的密码、私钥、内网 IP 等敏感信息 | MEDIUM |
 | CG-D003 | 配置变更审计日志分析 | MEDIUM |
 
-### Container Security (CG-T)
+### 容器安全 (CG-T)
 
 | ID | 规则 | 严重级别 |
 |----|------|----------|
 | CG-T001 | Docker Socket 挂载（等效宿主 root） | CRITICAL |
+
+### 费用安全 (CG-M)
+
+| ID | 规则 | 严重级别 |
+|----|------|----------|
+| CG-M001 | API 费用限额未配置 | CRITICAL |
+| CG-M002 | 多个高价值 API Key 同时暴露 | HIGH |
+| CG-M003 | 未配置用量告警 / Webhook | MEDIUM |
+
+### 破坏性操作防护 (CG-X)
+
+| ID | 规则 | 严重级别 |
+|----|------|----------|
+| CG-X001 | 无危险命令黑名单 / 白名单 | CRITICAL |
+| CG-X002 | 无文件系统写入范围限制 | HIGH |
+| CG-X003 | 无备份或回滚机制 | HIGH |
+| CG-X004 | 危险操作无人工确认环节 | MEDIUM |
 
 ## 架构
 
@@ -272,28 +375,32 @@ src/
 ├── platform.rs          # 三平台（macOS/Linux/Windows）路径适配
 ├── engine/
 │   ├── mod.rs           # Rule/StaticRule trait, Finding, Severity, Category 定义
-│   ├── registry.rs      # 内置规则注册表
+│   ├── registry.rs      # 内置规则注册表（35 条规则）
 │   └── skill/
 │       ├── mod.rs       # Skill 加载器（目录扫描）
 │       ├── parser.rs    # SKILL.md frontmatter + ## Evaluate 解析
 │       └── runner.rs    # 沙箱化命令执行 + JSON 输出解析
 ├── llm/
 │   ├── mod.rs           # Analyzer trait, AnalysisReport 类型定义
+│   ├── providers.rs     # 提供商注册表（24 个提供商）
+│   ├── adapter.rs       # 协议适配器（OpenAI 兼容 + Anthropic 原生）
 │   ├── prompt.rs        # Findings → LLM Prompt 构建器
-│   ├── local.rs         # 本地模式（Anthropic/OpenAI/Ollama API 调用）
+│   ├── local.rs         # 本地模式（多提供商 API 调用 + 动画进度条）
 │   └── remote.rs        # 远程模式（install9 平台）
 ├── rules/
 │   ├── credential/      # CG-C001 ~ CG-C003
 │   ├── filesystem/      # CG-F001 ~ CG-F003
-│   ├── network/         # CG-N001 ~ CG-N003
-│   ├── process/         # CG-P001 ~ CG-P002
+│   ├── network/         # CG-N001 ~ CG-N005
+│   ├── process/         # CG-P001 ~ CG-P005
 │   ├── gateway/         # CG-G001 ~ CG-G004
 │   ├── sandbox/         # CG-S001 ~ CG-S002
 │   ├── plugin/          # CG-K001 ~ CG-K002
 │   ├── dataleak/        # CG-D001 ~ CG-D003
-│   └── docker/          # CG-T001
+│   ├── docker/          # CG-T001
+│   ├── cost/            # CG-M001 ~ CG-M003
+│   └── destructive/     # CG-X001 ~ CG-X004
 └── report/
-    └── mod.rs           # 报告生成、评分、终端/JSON 输出
+    └── mod.rs           # 报告生成、加权评分、终端/JSON 输出
 ```
 
 ### 添加内置规则
@@ -334,6 +441,7 @@ Options:
     --output <PATH>          保存报告到文件
     --category <NAME>        只运行指定分类的规则
     --list-rules             列出所有检测规则
+    --list-providers         列出所有支持的 LLM 提供商
     --no-upload              跳过上传
     --api-url <URL>          API 基础地址 [默认: https://install9.ai/api/claw-guard]
 
@@ -345,9 +453,9 @@ Options:
     --mode <local|remote>    分析模式 [默认: local]
     --no-analyze             跳过 LLM 分析（经典模式）
     --api-key <KEY>          LLM API Key（或设置 CLAW_GUARD_API_KEY 环境变量）
-    --provider <PROVIDER>    anthropic | openai | ollama [默认: anthropic]
-    --model <MODEL>          LLM 模型名称
-    --ollama-url <URL>       Ollama 服务器地址 [默认: http://localhost:11434]
+    --provider <NAME>        LLM 提供商名称 [默认: anthropic]
+    --model <MODEL>          LLM 模型名称（覆盖提供商默认值）
+    --base-url <URL>         自定义 OpenAI 兼容端点地址
 
     -h, --help
     -V, --version
@@ -361,14 +469,37 @@ Options:
 cargo build --release
 ```
 
-交叉编译（需要 [cross](https://github.com/cross-rs/cross)）：
+交叉编译：
 
 ```sh
-cross build --release --target x86_64-unknown-linux-gnu
-cross build --release --target aarch64-unknown-linux-gnu
-cross build --release --target x86_64-apple-darwin
-cross build --release --target aarch64-apple-darwin
+# macOS（原生）
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+
+# Linux（通过 Docker）
+docker run --rm --platform linux/arm64 -v "$(pwd)":/app -w /app rust:latest \
+  cargo build --release --target aarch64-unknown-linux-gnu
+docker run --rm -v "$(pwd)":/app -w /app rust:latest \
+  cargo build --release --target x86_64-unknown-linux-gnu
+
+# Windows（通过 Docker）
+docker run --rm -v "$(pwd)":/app -w /app rust:latest bash -c \
+  "apt-get update -qq && apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null 2>&1 && \
+   rustup target add x86_64-pc-windows-gnu && \
+   cargo build --release --target x86_64-pc-windows-gnu"
 ```
+
+## 下载
+
+| 文件 | 平台 |
+|------|------|
+| claw-guard-v0.3.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
+| claw-guard-v0.3.0-darwin-amd64.tar.gz | macOS Intel |
+| claw-guard-v0.3.0-linux-amd64.tar.gz | Linux x86_64 |
+| claw-guard-v0.3.0-linux-arm64.tar.gz | Linux ARM64 |
+| claw-guard-v0.3.0-windows-amd64.zip | Windows x86_64 |
+
+从 [GitHub Releases](https://github.com/akz142857/claw-guard/releases) 下载。
 
 ## License
 

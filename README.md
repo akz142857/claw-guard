@@ -6,7 +6,7 @@
 
 <p align="center">
   AI-powered host system security audit tool for OpenClaw.<br>
-  23 built-in detection rules across 9 categories, extensible via Skills, with LLM-driven attack chain analysis.
+  35 built-in detection rules across 11 categories, extensible via Skills, with LLM-driven attack chain analysis.
 </p>
 
 <p align="center">
@@ -20,55 +20,50 @@
 ## Quick Start
 
 ```sh
-cargo build --release
+# Download binary (example: macOS Apple Silicon)
+curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.3.0-darwin-arm64.tar.gz
+tar xzf claw-guard-v0.3.0-darwin-arm64.tar.gz
+chmod +x claw-guard
 
 # Full audit (classic mode, no LLM)
-./target/release/claw-guard --no-upload --no-analyze
+./claw-guard --no-upload --no-analyze
 
 # AI-powered audit (Anthropic)
 export CLAW_GUARD_API_KEY=sk-ant-xxx
-./target/release/claw-guard --no-upload
+./claw-guard --no-upload
 
-# AI-powered audit (OpenAI / Ollama)
-./target/release/claw-guard --no-upload --provider openai --api-key sk-xxx
-./target/release/claw-guard --no-upload --provider ollama --model llama3
+# AI-powered audit (OpenAI / Ollama / 24 providers)
+./claw-guard --no-upload --provider openai --model gpt-4o
+./claw-guard --no-upload --provider ollama --model llama3
+./claw-guard --no-upload --provider deepseek --model deepseek-chat
 
 # Filter by category
-./target/release/claw-guard --no-upload --no-analyze --category gateway
+./claw-guard --no-upload --no-analyze --category cost
+./claw-guard --no-upload --no-analyze --category destructive
 
-# Load community skills
-./target/release/claw-guard --no-upload --no-analyze --skill-dir ./examples/skills
+# List all supported LLM providers
+./claw-guard --list-providers
 
 # List all rules + skills
-./target/release/claw-guard --list-rules --skill-dir ./examples/skills
+./claw-guard --list-rules
 
 # JSON output / save report
-./target/release/claw-guard --no-upload --no-analyze --json
-./target/release/claw-guard --no-upload --no-analyze --output report.json
+./claw-guard --no-upload --no-analyze --json
+./claw-guard --no-upload --no-analyze --output report.json
 ```
 
 ## Example Output
 
 ```
-╔══════════════════════════════════════════════════╗
-║        claw-guard Security Audit Report         ║
-╚══════════════════════════════════════════════════╝
-
-  Host:     my-server  (linux)
-  Time:     2026-03-09T17:48:00+00:00
-  Version:  0.1.0
-  Score:    54/100  [██████████░░░░░░░░░░] Fair
-
-  Rules: 23 + 3 skills  |  Pass: 17  Fail: 6  Warn: 4  Skip: 8
-
-  !! 4 CRITICAL finding(s) !!
-  !  2 HIGH finding(s)
+  claw-guard v0.3.0 — my-server  (linux)
+  2026-03-10T17:00:00+00:00
 
   ── Category Breakdown ──
-  ✗ Credential Exposure             9 checks   5 fail   2 warn
-  ✗ Data Leak Detection             4 checks   1 fail   0 warn
-  ⚠ Network Exposure                4 checks   0 fail   1 warn
+  ✗ Credential Exposure             8 checks   6 fail   0 warn
+  ✗ Destructive Action Protection   4 checks   3 fail   1 warn
+  ✗ Cost Safety                     3 checks   2 fail   0 warn
   ✓ Gateway Configuration           4 checks   0 fail   0 warn
+  ✓ File System Security            6 checks   0 fail   0 warn
   ...
 
   ── Findings ──
@@ -77,29 +72,35 @@ export CLAW_GUARD_API_KEY=sk-ant-xxx
     evidence: path=~/.aws mode=755 name=aws_credentials
     fix: chmod 700 on credential directories.
 
-  ✗ [HIGH] CG-D001 (API key leak in history/logs)
-    API key patterns in ~/.zsh_history
-    evidence: file=~/.zsh_history types=[openai, anthropic]
-    fix: Rotate exposed keys. Use secret managers.
+  ✗ [CRITICAL] CG-M001 (API cost limit not configured)
+    No API cost or rate limits configured.
+    fix: Set cost limits in openclaw.json.
 
   ── AI Analysis ──────────────────────────────────
 
   Summary:
   Your system has a credential theft attack chain: ~/.aws is
-  world-readable AND API keys appear in shell history. An attacker
-  with local access could extract AWS credentials in seconds.
+  world-readable AND API keys appear in shell history.
 
   Attack Chains:
-  1. [High] Credential Theft via History
-     CG-C001 + CG-D001 → AWS account takeover
+  1. [High] Credential theft to cloud compromise
+     CG-C001 + CG-C003 + CG-S001 → AWS account takeover
+  2. [High] Runaway agent causing financial damage
+     CG-M001 + CG-M003 + CG-X001 → Uncontrolled API spend
 
   Priority Fixes:
   1. chmod 700 ~/.aws ~/.ssh ~/.docker
      ← blocks credential theft chain (CG-C001)
-  2. Rotate leaked keys in shell history
-     ← damage control (CG-D001)
 
   ─────────────────────────────────────────────────
+
+╔══════════════════════════════════════════════════╗
+║              Audit Result Summary                ║
+╚══════════════════════════════════════════════════╝
+  Score:    52/100  [██████████░░░░░░░░░░] Poor
+  Rules: 35  |  Pass: 24  Fail: 20  Warn: 5  Skip: 0
+  !! 9 CRITICAL finding(s) !!
+  !  6 HIGH finding(s)
 ```
 
 Exit codes: `0` all clear, `1` HIGH findings, `2` CRITICAL findings. CI/CD friendly.
@@ -115,13 +116,38 @@ claw-guard uses LLM to go beyond pass/fail — it identifies **attack chains** (
 | **Local** (default) | Your own API key, analysis runs on your machine | Privacy-first, air-gapped environments |
 | **Remote** | Sends findings to install9 platform for analysis | Continuous monitoring, historical trends |
 
-### Supported Providers (Local Mode)
+### Supported Providers (24)
+
+Use `--list-providers` to see all providers with their default models and base URLs.
 
 | Provider | Flag | Default Model |
 |----------|------|---------------|
 | Anthropic | `--provider anthropic` | claude-sonnet-4-20250514 |
 | OpenAI | `--provider openai` | gpt-4o |
-| Ollama | `--provider ollama` | llama3 |
+| Ollama (local) | `--provider ollama` | llama3 |
+| vLLM (local) | `--provider vllm` | default |
+| OpenRouter | `--provider openrouter` | anthropic/claude-sonnet-4-20250514 |
+| Together AI | `--provider together` | meta-llama/Llama-3-70b-chat-hf |
+| Mistral | `--provider mistral` | mistral-large-latest |
+| DeepSeek | `--provider deepseek` | deepseek-chat |
+| NVIDIA | `--provider nvidia` | meta/llama-3.1-70b-instruct |
+| Moonshot (Kimi) | `--provider moonshot` | moonshot-v1-8k |
+| GLM (Zhipu AI) | `--provider glm` | glm-4 |
+| Qwen (Alibaba) | `--provider qwen` | qwen-max |
+| MiniMax | `--provider minimax` | abab6.5s-chat |
+| Hugging Face | `--provider huggingface` | meta-llama/Llama-3-70b-chat-hf |
+| Qianfan (Baidu) | `--provider qianfan` | ernie-4.0-8k |
+| Amazon Bedrock | `--provider bedrock` | anthropic.claude-sonnet-4-20250514-v1:0 |
+| Cloudflare AI Gateway | `--provider cloudflare` | @cf/meta/llama-3-8b-instruct |
+| Vercel AI Gateway | `--provider vercel` | gpt-4o |
+| LiteLLM | `--provider litellm` | gpt-4o |
+| Venice | `--provider venice` | llama-3.1-405b |
+| Xiaomi | `--provider xiaomi` | xiaomi-ai-large |
+| Z.AI | `--provider zai` | default |
+| Kilocode | `--provider kilocode` | default |
+| OpenCode Zen | `--provider opencode-zen` | default |
+
+Custom OpenAI-compatible endpoints are supported via `--base-url`:
 
 ```sh
 # Local with Anthropic (default)
@@ -131,12 +157,46 @@ claw-guard --no-upload
 # Local with Ollama (fully offline)
 claw-guard --no-upload --provider ollama --model llama3
 
+# Custom endpoint
+claw-guard --no-upload --provider openai --base-url http://my-proxy:8080
+
 # Remote mode (sends to install9 platform)
 claw-guard --mode remote --platform-id my-server-id
 
 # Skip AI analysis entirely
 claw-guard --no-upload --no-analyze
 ```
+
+## Scoring Model
+
+claw-guard uses a **weighted category pass-rate model** (similar to AWS Security Hub / CIS Benchmarks):
+
+- 11 categories, each with an importance weight (total = 100)
+- Severity-weighted pass rates within each category
+- No single category can drag the entire score to zero
+- Warnings earn partial credit (50%), skips earn 80%
+
+| Category | Weight | Rationale |
+|----------|--------|-----------|
+| Sandbox & Isolation | 15 | Single most impactful control |
+| Credential Exposure | 12 | Credential theft → full compromise |
+| Network Exposure | 12 | Network exposure → remote attack vector |
+| Gateway Configuration | 10 | Gateway auth → command execution |
+| Destructive Action Protection | 10 | Prevents rm -rf / data loss |
+| Process Security | 10 | Process compromise → host takeover |
+| Cost Safety | 8 | Financial risk from API abuse |
+| Data Leak Detection | 8 | Data exfiltration |
+| Container Security | 5 | Container escape |
+| Plugin & Extension Security | 5 | Plugin supply chain attacks |
+| File System Security | 5 | File permission issues |
+
+| Score | Grade |
+|-------|-------|
+| 90-100 | Excellent |
+| 75-89 | Good |
+| 60-74 | Fair |
+| 40-59 | Poor |
+| 0-39 | Critical |
 
 ## Skills
 
@@ -215,7 +275,7 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 
 ## Detection Rules
 
-23 built-in rules, each with a unique ID (`CG-XNNN`), category, severity, and remediation advice.
+35 built-in rules, each with a unique ID (`CG-XNNN`), category, severity, and remediation advice.
 
 ### Credential Exposure (CG-C)
 
@@ -240,6 +300,8 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 | CG-N001 | Wildcard network listeners (gateway bound to 0.0.0.0) | HIGH |
 | CG-N002 | Outbound connection audit | HIGH |
 | CG-N003 | OpenClaw port surface scan (18789-18899, 9222, 5900, 6080) | MEDIUM |
+| CG-N004 | Reverse shell / C2 tool detection | CRITICAL |
+| CG-N005 | DNS tunnel exfiltration detection | MEDIUM |
 
 ### Process Security (CG-P)
 
@@ -247,6 +309,9 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 |----|------|----------|
 | CG-P001 | Elevated privilege execution (root/SYSTEM) | HIGH |
 | CG-P002 | Dangerous sub-agent flags (--yolo, bypassPermissions) | HIGH |
+| CG-P003 | Cron job / scheduled task audit | HIGH |
+| CG-P004 | Anomalous child process detection (miners, scanners, proxies) | HIGH |
+| CG-P005 | Host compromise assessment (SSH keys, hidden files, CPU mining, login brute force, binary integrity) | CRITICAL |
 
 ### Gateway Configuration (CG-G)
 
@@ -285,6 +350,23 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 |----|------|----------|
 | CG-T001 | Docker socket exposure (equivalent to host root) | CRITICAL |
 
+### Cost Safety (CG-M)
+
+| ID | Rule | Severity |
+|----|------|----------|
+| CG-M001 | API cost limit not configured | CRITICAL |
+| CG-M002 | Multiple high-value API keys exposed | HIGH |
+| CG-M003 | No usage alert / webhook configured | MEDIUM |
+
+### Destructive Action Protection (CG-X)
+
+| ID | Rule | Severity |
+|----|------|----------|
+| CG-X001 | No destructive command denylist / allowlist | CRITICAL |
+| CG-X002 | No filesystem write scope restriction | HIGH |
+| CG-X003 | No backup or rollback mechanism | HIGH |
+| CG-X004 | No human-in-the-loop confirmation for dangerous ops | MEDIUM |
+
 ## Architecture
 
 ```
@@ -293,28 +375,32 @@ src/
 ├── platform.rs          # Cross-platform path abstraction (macOS/Linux/Windows)
 ├── engine/
 │   ├── mod.rs           # Rule/StaticRule traits, Finding, Severity, Category
-│   ├── registry.rs      # Built-in rule registry
+│   ├── registry.rs      # Built-in rule registry (35 rules)
 │   └── skill/
 │       ├── mod.rs       # Skill loader (directory scanning)
 │       ├── parser.rs    # SKILL.md frontmatter + ## Evaluate parser
 │       └── runner.rs    # Sandboxed command execution + JSON output parsing
 ├── llm/
 │   ├── mod.rs           # Analyzer trait, AnalysisReport types
+│   ├── providers.rs     # Provider registry (24 providers)
+│   ├── adapter.rs       # Protocol adapters (OpenAI-compat, Anthropic)
 │   ├── prompt.rs        # Findings → LLM prompt builder
-│   ├── local.rs         # Local mode (Anthropic/OpenAI/Ollama API calls)
+│   ├── local.rs         # Local mode (multi-provider API calls + spinner)
 │   └── remote.rs        # Remote mode (install9 platform)
 ├── rules/
 │   ├── credential/      # CG-C001 ~ CG-C003
 │   ├── filesystem/      # CG-F001 ~ CG-F003
-│   ├── network/         # CG-N001 ~ CG-N003
-│   ├── process/         # CG-P001 ~ CG-P002
+│   ├── network/         # CG-N001 ~ CG-N005
+│   ├── process/         # CG-P001 ~ CG-P005
 │   ├── gateway/         # CG-G001 ~ CG-G004
 │   ├── sandbox/         # CG-S001 ~ CG-S002
 │   ├── plugin/          # CG-K001 ~ CG-K002
 │   ├── dataleak/        # CG-D001 ~ CG-D003
-│   └── docker/          # CG-T001
+│   ├── docker/          # CG-T001
+│   ├── cost/            # CG-M001 ~ CG-M003
+│   └── destructive/     # CG-X001 ~ CG-X004
 └── report/
-    └── mod.rs           # Report generation, scoring, terminal/JSON output
+    └── mod.rs           # Report generation, weighted scoring, terminal/JSON output
 ```
 
 ### Adding a Built-in Rule
@@ -355,6 +441,7 @@ Options:
     --output <PATH>          Save report to file
     --category <NAME>        Only run rules in this category
     --list-rules             List all detection rules
+    --list-providers         List all supported LLM providers
     --no-upload              Skip upload to platform
     --api-url <URL>          API base URL [default: https://install9.ai/api/claw-guard]
 
@@ -366,9 +453,9 @@ Options:
     --mode <local|remote>    Analysis mode [default: local]
     --no-analyze             Skip LLM analysis (classic mode)
     --api-key <KEY>          LLM API key (or set CLAW_GUARD_API_KEY)
-    --provider <PROVIDER>    anthropic | openai | ollama [default: anthropic]
-    --model <MODEL>          LLM model name
-    --ollama-url <URL>       Ollama server URL [default: http://localhost:11434]
+    --provider <NAME>        LLM provider name [default: anthropic]
+    --model <MODEL>          LLM model name (overrides provider default)
+    --base-url <URL>         Custom base URL for any OpenAI-compatible endpoint
 
     -h, --help
     -V, --version
@@ -382,14 +469,37 @@ Requires Rust 1.85+. Supports macOS, Linux, and Windows.
 cargo build --release
 ```
 
-Cross-compilation (requires [cross](https://github.com/cross-rs/cross)):
+Cross-compilation:
 
 ```sh
-cross build --release --target x86_64-unknown-linux-gnu
-cross build --release --target aarch64-unknown-linux-gnu
-cross build --release --target x86_64-apple-darwin
-cross build --release --target aarch64-apple-darwin
+# macOS (native)
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+
+# Linux (via Docker)
+docker run --rm --platform linux/arm64 -v "$(pwd)":/app -w /app rust:latest \
+  cargo build --release --target aarch64-unknown-linux-gnu
+docker run --rm -v "$(pwd)":/app -w /app rust:latest \
+  cargo build --release --target x86_64-unknown-linux-gnu
+
+# Windows (via Docker)
+docker run --rm -v "$(pwd)":/app -w /app rust:latest bash -c \
+  "apt-get update -qq && apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null 2>&1 && \
+   rustup target add x86_64-pc-windows-gnu && \
+   cargo build --release --target x86_64-pc-windows-gnu"
 ```
+
+## Downloads
+
+| File | Platform |
+|------|----------|
+| claw-guard-v0.3.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
+| claw-guard-v0.3.0-darwin-amd64.tar.gz | macOS Intel |
+| claw-guard-v0.3.0-linux-amd64.tar.gz | Linux x86_64 |
+| claw-guard-v0.3.0-linux-arm64.tar.gz | Linux ARM64 |
+| claw-guard-v0.3.0-windows-amd64.zip | Windows x86_64 |
+
+Download from [GitHub Releases](https://github.com/akz142857/claw-guard/releases).
 
 ## License
 

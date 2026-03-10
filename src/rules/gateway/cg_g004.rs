@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   Never reuse passwords or use short tokens.",
 };
 
-impl Rule for CgG004 {
+impl StaticRule for CgG004 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

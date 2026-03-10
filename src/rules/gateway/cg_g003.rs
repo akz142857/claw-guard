@@ -17,7 +17,7 @@ static META: RuleMeta = RuleMeta {
                   Use trustedDirs to restrict command locations.",
 };
 
-impl Rule for CgG003 {
+impl StaticRule for CgG003 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

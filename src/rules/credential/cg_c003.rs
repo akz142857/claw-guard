@@ -40,7 +40,7 @@ const SENSITIVE_SUFFIXES: &[&str] = &[
     "_API_KEY", "_SECRET_KEY", "_TOKEN", "_PASSWORD", "_PRIVATE_KEY", "_SECRET",
 ];
 
-impl Rule for CgC003 {
+impl StaticRule for CgC003 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

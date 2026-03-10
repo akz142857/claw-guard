@@ -5,18 +5,36 @@ use anyhow::Result;
 use std::path::Path;
 use tracing::{info, warn};
 
-use super::{Finding, Rule, RuleMeta};
+use super::{Finding, OwnedRuleMeta, Rule};
 
-/// A rule loaded from a Skill .md file
+/// A rule loaded from a Skill .md file.
+/// Uses OwnedRuleMeta to avoid Box::leak memory leak.
 pub struct SkillRule {
-    meta: RuleMeta,
-    evaluate_cmd: String,
-    timeout_secs: u64,
+    pub(crate) meta: OwnedRuleMeta,
+    pub(crate) evaluate_cmd: String,
+    pub(crate) timeout_secs: u64,
+    #[allow(dead_code)]
+    pub(crate) source_path: String,
 }
 
 impl Rule for SkillRule {
-    fn meta(&self) -> &RuleMeta {
-        &self.meta
+    fn id(&self) -> &str {
+        &self.meta.id
+    }
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+    fn description(&self) -> &str {
+        &self.meta.description
+    }
+    fn category(&self) -> super::Category {
+        self.meta.category
+    }
+    fn severity(&self) -> super::Severity {
+        self.meta.severity
+    }
+    fn remediation(&self) -> &str {
+        &self.meta.remediation
     }
 
     fn evaluate(&self) -> Result<Vec<Finding>> {
@@ -24,8 +42,8 @@ impl Rule for SkillRule {
     }
 }
 
-/// Load all skill files from a directory
-/// Looks for *.md files with valid frontmatter containing `evaluate` section
+/// Load all skill files from a directory.
+/// Looks for *.md files with valid frontmatter containing an `## Evaluate` section.
 pub fn load_skills(dir: &Path) -> Result<Vec<Box<dyn Rule>>> {
     let mut skills: Vec<Box<dyn Rule>> = Vec::new();
 
@@ -48,7 +66,6 @@ pub fn load_skills(dir: &Path) -> Result<Vec<Box<dyn Rule>>> {
                 continue;
             }
         } else if path.extension().map_or(false, |e| e == "md") {
-            // Skip files that don't look like skill files (e.g. README.md)
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
             if name.eq_ignore_ascii_case("readme") {
                 continue;
@@ -60,11 +77,10 @@ pub fn load_skills(dir: &Path) -> Result<Vec<Box<dyn Rule>>> {
 
         match parser::parse_skill_file(&skill_path) {
             Ok(Some(skill)) => {
-                info!("Loaded skill: {} ({})", skill.meta().id, skill.meta().name);
+                info!("Loaded skill: {} ({})", skill.id(), skill.name());
                 skills.push(Box::new(skill));
             }
             Ok(None) => {
-                // Not a valid claw-guard skill (e.g. missing evaluate section)
                 info!("Skipped {}: not a security audit skill", skill_path.display());
             }
             Err(e) => {

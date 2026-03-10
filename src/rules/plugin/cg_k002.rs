@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
     remediation: "chmod 700 ~/.openclaw/extensions. Ensure only the owner can write plugins.",
 };
 
-impl Rule for CgK002 {
+impl StaticRule for CgK002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

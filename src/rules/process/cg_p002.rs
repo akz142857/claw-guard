@@ -26,7 +26,7 @@ const DANGEROUS_FLAGS: &[&str] = &[
     "--trust-all",
 ];
 
-impl Rule for CgP002 {
+impl StaticRule for CgP002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   or a rootless Docker setup if containers need Docker access.",
 };
 
-impl Rule for CgT001 {
+impl StaticRule for CgT001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

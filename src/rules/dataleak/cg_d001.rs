@@ -56,7 +56,7 @@ fn scan_file(path: &PathBuf) -> Vec<String> {
     found
 }
 
-impl Rule for CgD001 {
+impl StaticRule for CgD001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

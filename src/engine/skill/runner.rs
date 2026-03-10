@@ -3,7 +3,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use tracing::warn;
 
-use crate::engine::{Finding, RuleMeta, Status};
+use crate::engine::{Finding, OwnedRuleMeta, Status};
 
 /// Skill command output protocol
 #[derive(serde::Deserialize)]
@@ -14,24 +14,50 @@ struct SkillOutput {
     evidence: Option<String>,
 }
 
+/// Sensitive env var prefixes that should NOT be inherited by skill commands.
+const STRIPPED_ENV_PREFIXES: &[&str] = &[
+    "AWS_SECRET",
+    "AWS_SESSION",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "CLAW_GUARD_API_KEY",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "AZURE_",
+    "DATABASE_URL",
+    "DB_PASSWORD",
+];
+
 /// Run a skill's evaluate command and convert output to Findings.
-/// Enforces a timeout — kills the child process if it exceeds `timeout_secs`.
+/// Enforces a timeout and strips sensitive env vars from the child process.
 pub fn run_skill_command(
-    meta: &RuleMeta,
+    meta: &OwnedRuleMeta,
     cmd: &str,
     timeout_secs: u64,
 ) -> Result<Vec<Finding>> {
     let shell = if cfg!(windows) { "cmd" } else { "sh" };
     let flag = if cfg!(windows) { "/C" } else { "-c" };
 
-    let mut child = match Command::new(shell)
+    let mut command = Command::new(shell);
+    command
         .arg(flag)
         .arg(cmd)
         .env("CLAW_GUARD", "1")
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
+        .stderr(std::process::Stdio::piped());
+
+    // Strip sensitive env vars from child process
+    for (key, _) in std::env::vars() {
+        if STRIPPED_ENV_PREFIXES
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+        {
+            command.env_remove(&key);
+        }
+    }
+
+    let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
             return Ok(vec![meta.finding(
@@ -82,8 +108,8 @@ pub fn run_skill_command(
 
     if !output.status.success() && stdout.trim().is_empty() {
         return Ok(vec![Finding {
-            rule_id: meta.id.to_string(),
-            rule_name: meta.name.to_string(),
+            rule_id: meta.id.clone(),
+            rule_name: meta.name.clone(),
             category: meta.category,
             severity: meta.severity,
             status: Status::Error,
@@ -93,7 +119,7 @@ pub fn run_skill_command(
                 stderr.trim()
             ),
             evidence: None,
-            remediation: meta.remediation.to_string(),
+            remediation: meta.remediation.clone(),
         }]);
     }
 
@@ -117,23 +143,22 @@ pub fn run_skill_command(
                 };
 
                 findings.push(Finding {
-                    rule_id: meta.id.to_string(),
-                    rule_name: meta.name.to_string(),
+                    rule_id: meta.id.clone(),
+                    rule_name: meta.name.clone(),
                     category: meta.category,
                     severity: meta.severity,
                     status,
                     detail: skill_out.detail,
                     evidence: skill_out.evidence,
-                    remediation: meta.remediation.to_string(),
+                    remediation: meta.remediation.clone(),
                 });
             }
             Err(e) => {
                 warn!("Skill {} output not JSON: {}. Line: {}", meta.id, e, line);
-                // Only create a finding from non-JSON if it's the only output line
                 if stdout.lines().filter(|l| !l.trim().is_empty()).count() == 1 {
                     findings.push(Finding {
-                        rule_id: meta.id.to_string(),
-                        rule_name: meta.name.to_string(),
+                        rule_id: meta.id.clone(),
+                        rule_name: meta.name.clone(),
                         category: meta.category,
                         severity: meta.severity,
                         status: if output.status.success() {
@@ -143,7 +168,7 @@ pub fn run_skill_command(
                         },
                         detail: line.to_string(),
                         evidence: None,
-                        remediation: meta.remediation.to_string(),
+                        remediation: meta.remediation.clone(),
                     });
                 }
             }
@@ -153,8 +178,8 @@ pub fn run_skill_command(
     // Fallback: if no findings produced, use exit code
     if findings.is_empty() {
         findings.push(Finding {
-            rule_id: meta.id.to_string(),
-            rule_name: meta.name.to_string(),
+            rule_id: meta.id.clone(),
+            rule_name: meta.name.clone(),
             category: meta.category,
             severity: meta.severity,
             status: if output.status.success() {
@@ -175,7 +200,7 @@ pub fn run_skill_command(
             } else {
                 None
             },
-            remediation: meta.remediation.to_string(),
+            remediation: meta.remediation.clone(),
         });
     }
 

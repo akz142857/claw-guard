@@ -17,7 +17,7 @@ static META: RuleMeta = RuleMeta {
                   Generate a strong token: openssl rand -hex 24",
 };
 
-impl Rule for CgG001 {
+impl StaticRule for CgG001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

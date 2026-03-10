@@ -51,7 +51,7 @@ const FLAGS: &[DangerousFlag] = &[
     },
 ];
 
-impl Rule for CgG002 {
+impl StaticRule for CgG002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

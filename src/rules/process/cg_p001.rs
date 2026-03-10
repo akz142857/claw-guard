@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   with minimal file system access.",
 };
 
-impl Rule for CgP001 {
+impl StaticRule for CgP001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

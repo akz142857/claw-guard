@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   rm -rf ~/.clawdbot ~/.moldbot ~/.moltbot",
 };
 
-impl Rule for CgF003 {
+impl StaticRule for CgF003 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

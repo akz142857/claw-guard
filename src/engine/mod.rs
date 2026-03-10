@@ -98,6 +98,52 @@ pub struct RuleMeta {
     pub remediation: &'static str,
 }
 
+/// Owned version of RuleMeta for dynamically loaded rules (Skills).
+/// Avoids Box::leak by owning the strings directly.
+#[derive(Debug, Clone)]
+pub struct OwnedRuleMeta {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: Category,
+    pub severity: Severity,
+    pub remediation: String,
+}
+
+#[allow(dead_code)]
+impl OwnedRuleMeta {
+    pub fn finding(&self, status: Status, detail: impl Into<String>) -> Finding {
+        Finding {
+            rule_id: self.id.clone(),
+            rule_name: self.name.clone(),
+            category: self.category,
+            severity: self.severity,
+            status,
+            detail: detail.into(),
+            evidence: None,
+            remediation: self.remediation.clone(),
+        }
+    }
+
+    pub fn finding_with_evidence(
+        &self,
+        status: Status,
+        detail: impl Into<String>,
+        evidence: impl Into<String>,
+    ) -> Finding {
+        Finding {
+            rule_id: self.id.clone(),
+            rule_name: self.name.clone(),
+            category: self.category,
+            severity: self.severity,
+            status,
+            detail: detail.into(),
+            evidence: Some(evidence.into()),
+            remediation: self.remediation.clone(),
+        }
+    }
+}
+
 /// A single finding produced by a rule execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {
@@ -113,8 +159,30 @@ pub struct Finding {
 
 /// Trait every detection rule must implement.
 pub trait Rule: Send + Sync {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn category(&self) -> Category;
+    fn severity(&self) -> Severity;
+    fn remediation(&self) -> &str;
+    fn evaluate(&self) -> Result<Vec<Finding>>;
+}
+
+/// Blanket helpers for built-in rules that store a static RuleMeta.
+/// Built-in rules implement StaticRule (one method) instead of all 6 accessors.
+pub trait StaticRule: Send + Sync {
     fn meta(&self) -> &RuleMeta;
     fn evaluate(&self) -> Result<Vec<Finding>>;
+}
+
+impl<T: StaticRule> Rule for T {
+    fn id(&self) -> &str { self.meta().id }
+    fn name(&self) -> &str { self.meta().name }
+    fn description(&self) -> &str { self.meta().description }
+    fn category(&self) -> Category { self.meta().category }
+    fn severity(&self) -> Severity { self.meta().severity }
+    fn remediation(&self) -> &str { self.meta().remediation }
+    fn evaluate(&self) -> Result<Vec<Finding>> { StaticRule::evaluate(self) }
 }
 
 /// Convenience: build a single-finding vec from rule meta + runtime data.

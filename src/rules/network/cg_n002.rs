@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   to restrict OpenClaw outbound access to known API endpoints only.",
 };
 
-impl Rule for CgN002 {
+impl StaticRule for CgN002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

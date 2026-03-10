@@ -15,7 +15,7 @@ static META: RuleMeta = RuleMeta {
     remediation: "chmod 600 /etc/ssh/ssh_host_*_key (exclude .pub files).",
 };
 
-impl Rule for CgF002 {
+impl StaticRule for CgF002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

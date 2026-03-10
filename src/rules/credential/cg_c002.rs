@@ -17,7 +17,7 @@ static META: RuleMeta = RuleMeta {
                   instead of storing secrets in config files.",
 };
 
-impl Rule for CgC002 {
+impl StaticRule for CgC002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

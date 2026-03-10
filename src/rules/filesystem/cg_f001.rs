@@ -19,7 +19,7 @@ static META: RuleMeta = RuleMeta {
 /// Files that are world-readable by design and not a real risk.
 const EXPECTED_READABLE: &[&str] = &["/etc/passwd"];
 
-impl Rule for CgF001 {
+impl StaticRule for CgF001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

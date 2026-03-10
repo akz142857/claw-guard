@@ -129,12 +129,11 @@ async fn main() -> Result<()> {
         );
         println!("{}", "-".repeat(76));
         for rule in &all_rules {
-            let m = rule.meta();
             println!(
                 "{:<12} {:<8} {:<22} {}",
-                m.id, m.severity, m.category, m.name
+                rule.id(), rule.severity(), rule.category(), rule.name()
             );
-            println!("             {}", m.description);
+            println!("             {}", rule.description());
         }
         if skills_loaded > 0 {
             println!("\n({} built-in rules + {} skills)", builtin_count, skills_loaded);
@@ -156,27 +155,31 @@ async fn main() -> Result<()> {
     let mut rules_run = 0usize;
 
     for rule in &all_rules {
-        let meta = rule.meta();
-
         // Category filter
         if let Some(ref filter) = category_filter {
-            let cat_str = format!("{:?}", meta.category).to_lowercase();
+            let cat_str = format!("{:?}", rule.category()).to_lowercase();
             if !cat_str.contains(filter) {
                 continue;
             }
         }
 
         rules_run += 1;
-        info!("[{}] {}", meta.id, meta.name);
+        info!("[{}] {}", rule.id(), rule.name());
 
         match rule.evaluate() {
             Ok(findings) => all_findings.extend(findings),
             Err(e) => {
-                error!("[{}] Rule failed: {}", meta.id, e);
-                all_findings.push(meta.finding(
-                    engine::Status::Error,
-                    format!("Rule evaluation failed: {}", e),
-                ));
+                error!("[{}] Rule failed: {}", rule.id(), e);
+                all_findings.push(engine::Finding {
+                    rule_id: rule.id().to_string(),
+                    rule_name: rule.name().to_string(),
+                    category: rule.category(),
+                    severity: rule.severity(),
+                    status: engine::Status::Error,
+                    detail: format!("Rule evaluation failed: {}", e),
+                    evidence: None,
+                    remediation: rule.remediation().to_string(),
+                });
             }
         }
     }

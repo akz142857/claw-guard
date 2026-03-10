@@ -16,7 +16,7 @@ static META: RuleMeta = RuleMeta {
                   Consider using OpenClaw sandbox mode to isolate agent file access.",
 };
 
-impl Rule for CgC001 {
+impl StaticRule for CgC001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

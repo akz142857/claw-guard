@@ -31,7 +31,7 @@ const SENSITIVE_CONFIG_KEYS: &[&str] = &[
     "allowUnsafe",
 ];
 
-impl Rule for CgD003 {
+impl StaticRule for CgD003 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

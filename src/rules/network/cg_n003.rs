@@ -33,7 +33,7 @@ const KNOWN_PORTS: &[(&str, u16)] = &[
     ("sandbox_novnc", 6080),
 ];
 
-impl Rule for CgN003 {
+impl StaticRule for CgN003 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

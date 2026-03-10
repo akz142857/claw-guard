@@ -18,7 +18,7 @@ static META: RuleMeta = RuleMeta {
                   for unauthorized changes.",
 };
 
-impl Rule for CgK001 {
+impl StaticRule for CgK001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

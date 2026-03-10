@@ -17,13 +17,16 @@ impl Analyzer for LocalAnalyzer {
         let prompt = super::prompt::build_prompt(report);
         info!("Analyzing with {} (model: {})...", self.provider, self.model);
 
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?;
+
         let response_text = match self.provider {
-            Provider::Anthropic => self.call_anthropic(&prompt).await?,
-            Provider::Openai => self.call_openai(&prompt).await?,
-            Provider::Ollama => self.call_ollama(&prompt).await?,
+            Provider::Anthropic => self.call_anthropic(&client, &prompt).await?,
+            Provider::Openai => self.call_openai(&client, &prompt).await?,
+            Provider::Ollama => self.call_ollama(&client, &prompt).await?,
         };
 
-        // Parse the LLM response — try to extract JSON
         let analysis: AnalysisReport = parse_llm_response(&response_text)?;
         Ok(AnalysisResult {
             analysis,
@@ -33,8 +36,7 @@ impl Analyzer for LocalAnalyzer {
 }
 
 impl LocalAnalyzer {
-    async fn call_anthropic(&self, prompt: &str) -> Result<String> {
-        let client = reqwest::Client::new();
+    async fn call_anthropic(&self, client: &reqwest::Client, prompt: &str) -> Result<String> {
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 4096,
@@ -66,8 +68,7 @@ impl LocalAnalyzer {
         Ok(text)
     }
 
-    async fn call_openai(&self, prompt: &str) -> Result<String> {
-        let client = reqwest::Client::new();
+    async fn call_openai(&self, client: &reqwest::Client, prompt: &str) -> Result<String> {
         let body = serde_json::json!({
             "model": self.model,
             "messages": [
@@ -100,8 +101,7 @@ impl LocalAnalyzer {
         Ok(text)
     }
 
-    async fn call_ollama(&self, prompt: &str) -> Result<String> {
-        let client = reqwest::Client::new();
+    async fn call_ollama(&self, client: &reqwest::Client, prompt: &str) -> Result<String> {
         let url = format!("{}/api/generate", self.ollama_url.trim_end_matches('/'));
         let body = serde_json::json!({
             "model": self.model,
@@ -135,56 +135,64 @@ impl LocalAnalyzer {
 }
 
 /// Parse LLM response text into AnalysisReport.
-/// Handles common LLM quirks: markdown fencing, leading text, etc.
+/// Handles markdown fencing, leading/trailing text, and JSON strings with braces.
 fn parse_llm_response(text: &str) -> Result<AnalysisReport> {
     // Try direct parse first
     if let Ok(report) = serde_json::from_str::<AnalysisReport>(text) {
         return Ok(report);
     }
 
-    // Try to extract JSON from markdown code block
-    let json_str = if let Some(start) = text.find("```json") {
+    // Extract JSON from markdown code blocks
+    let extracted = extract_json_block(text);
+    let candidate = extracted.trim();
+
+    if let Ok(report) = serde_json::from_str::<AnalysisReport>(candidate) {
+        return Ok(report);
+    }
+
+    // Last resort: try serde_json's streaming parser to find valid JSON
+    // by trimming from the front until we find a `{`
+    if let Some(start) = candidate.find('{') {
+        let substr = &candidate[start..];
+        if let Ok(report) = serde_json::from_str::<AnalysisReport>(substr) {
+            return Ok(report);
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to parse LLM response as AnalysisReport. Response preview: {}",
+        &text[..text.len().min(500)]
+    ))
+}
+
+/// Extract JSON from markdown-fenced or raw text.
+/// Uses serde_json's parser for brace matching to correctly handle
+/// braces inside JSON strings (e.g., "summary": "fix {dir}").
+fn extract_json_block(text: &str) -> &str {
+    // Try ```json ... ``` first
+    if let Some(start) = text.find("```json") {
         let after = &text[start + 7..];
         if let Some(end) = after.find("```") {
-            &after[..end]
-        } else {
-            after
+            return &after[..end];
         }
-    } else if let Some(start) = text.find("```") {
-        let after = &text[start + 3..];
-        if let Some(end) = after.find("```") {
-            &after[..end]
-        } else {
-            after
-        }
-    } else if let Some(start) = text.find('{') {
-        // Find the matching closing brace
-        let mut depth = 0;
-        let mut end_pos = text.len();
-        for (i, ch) in text[start..].char_indices() {
-            match ch {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end_pos = start + i + 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        &text[start..end_pos]
-    } else {
-        text
-    };
+        return after;
+    }
 
-    let trimmed = json_str.trim();
-    serde_json::from_str::<AnalysisReport>(trimmed).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to parse LLM response as AnalysisReport: {}. Response: {}",
-            e,
-            &text[..text.len().min(500)]
-        )
-    })
+    // Try ``` ... ```
+    if let Some(start) = text.find("```") {
+        let after = &text[start + 3..];
+        // Skip optional language tag on same line
+        let after = if let Some(nl) = after.find('\n') {
+            &after[nl + 1..]
+        } else {
+            after
+        };
+        if let Some(end) = after.find("```") {
+            return &after[..end];
+        }
+        return after;
+    }
+
+    // No fencing — return as-is, let the caller handle it
+    text
 }

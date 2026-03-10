@@ -18,7 +18,7 @@ static META: RuleMeta = RuleMeta {
 
 const OPENCLAW_KEYWORDS: &[&str] = &["openclaw", "claw", "node"];
 
-impl Rule for CgN001 {
+impl StaticRule for CgN001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

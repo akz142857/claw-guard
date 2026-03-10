@@ -32,7 +32,7 @@ const DANGEROUS_BOOLEANS: &[(&str, &str)] = &[
     ),
 ];
 
-impl Rule for CgS002 {
+impl StaticRule for CgS002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

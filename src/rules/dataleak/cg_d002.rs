@@ -29,7 +29,7 @@ const SENSITIVE_PATTERNS: &[(&str, &str)] = &[
     ("authorization", "authorization:"),
 ];
 
-impl Rule for CgD002 {
+impl StaticRule for CgD002 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

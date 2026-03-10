@@ -18,7 +18,7 @@ static META: RuleMeta = RuleMeta {
                   Requires Docker. See OpenClaw docs for sandbox setup.",
 };
 
-impl Rule for CgS001 {
+impl StaticRule for CgS001 {
     fn meta(&self) -> &RuleMeta {
         &META
     }

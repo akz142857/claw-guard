@@ -134,51 +134,14 @@ impl AuditReport {
     }
 
     pub fn print_terminal(&self) {
+        // ── Header (lightweight) ────────────────────────────────────────
         println!();
-        println!("╔══════════════════════════════════════════════════╗");
-        println!("║        claw-guard Security Audit Report         ║");
-        println!("╚══════════════════════════════════════════════════╝");
-        println!();
-        println!("  Host:     {}  ({})", self.hostname, self.os);
-        println!("  Time:     {}", self.timestamp);
-        println!("  Version:  {}", self.version);
-        println!(
-            "  Score:    {}/100  {}",
-            self.summary.score,
-            score_bar(self.summary.score)
-        );
+        println!("  claw-guard v{} — {}  ({})", self.version, self.hostname, self.os);
+        println!("  {}", self.timestamp);
         println!();
 
-        // Summary bar
-        let skills_str = match self.skills_loaded {
-            Some(n) if n > 0 => format!(" + {} skills", n),
-            _ => String::new(),
-        };
-        println!(
-            "  Rules: {}{}  |  Pass: {}  Fail: {}  Warn: {}  Skip: {}",
-            self.summary.total_rules,
-            skills_str,
-            self.summary.pass,
-            self.summary.fail,
-            self.summary.warn,
-            self.summary.skip,
-        );
-
-        if self.summary.critical_findings > 0 {
-            println!(
-                "\n  !! {} CRITICAL finding(s) !!",
-                self.summary.critical_findings
-            );
-        }
-        if self.summary.high_findings > 0 {
-            println!(
-                "  !  {} HIGH finding(s)",
-                self.summary.high_findings
-            );
-        }
-
-        // Category breakdown
-        println!("\n  ── Category Breakdown ──");
+        // ── Category breakdown ──────────────────────────────────────────
+        println!("  ── Category Breakdown ──");
         for cat in &self.categories {
             let status_icon = if cat.fail > 0 {
                 "✗"
@@ -193,7 +156,7 @@ impl AuditReport {
             );
         }
 
-        // Detailed findings — only show non-pass
+        // ── Detailed findings (fail/warn/error) ────────────────────────
         let issues: Vec<&Finding> = self
             .findings
             .iter()
@@ -222,7 +185,7 @@ impl AuditReport {
             }
         }
 
-        // Pass summary
+        // ── Passed (compact) ────────────────────────────────────────────
         let passed: Vec<&Finding> = self
             .findings
             .iter()
@@ -235,12 +198,12 @@ impl AuditReport {
             }
         }
 
-        // AI Analysis
+        // ── AI Analysis ─────────────────────────────────────────────────
         if let Some(ref analysis) = self.analysis {
+            println!();
             println!("  ── AI Analysis ──────────────────────────────────");
             println!();
             println!("  Summary:");
-            // Word-wrap at ~70 chars
             for line in wrap_text(&analysis.executive_summary, 70) {
                 println!("  {}", line);
             }
@@ -291,9 +254,47 @@ impl AuditReport {
             println!("  ─────────────────────────────────────────────────");
         }
 
+        // ── Score Summary (LAST — what the user sees when it finishes) ──
+        println!();
+        println!("╔══════════════════════════════════════════════════╗");
+        println!("║              Audit Result Summary                ║");
+        println!("╚══════════════════════════════════════════════════╝");
+        println!(
+            "  Score:    {}/100  {}",
+            self.summary.score,
+            score_bar(self.summary.score)
+        );
+        let skills_str = match self.skills_loaded {
+            Some(n) if n > 0 => format!(" + {} skills", n),
+            _ => String::new(),
+        };
+        println!(
+            "  Rules: {}{}  |  Pass: {}  Fail: {}  Warn: {}  Skip: {}",
+            self.summary.total_rules,
+            skills_str,
+            self.summary.pass,
+            self.summary.fail,
+            self.summary.warn,
+            self.summary.skip,
+        );
+        if self.summary.critical_findings > 0 {
+            println!(
+                "  !! {} CRITICAL finding(s) !!",
+                self.summary.critical_findings
+            );
+        }
+        if self.summary.high_findings > 0 {
+            println!(
+                "  !  {} HIGH finding(s)",
+                self.summary.high_findings
+            );
+        }
+        if self.summary.critical_findings == 0 && self.summary.high_findings == 0 && self.summary.fail == 0 {
+            println!("  All checks passed.");
+        }
+
         // Web URL
         if let Some(ref url) = self.web_url {
-            println!();
             println!("  Web report: {}", url);
         }
 

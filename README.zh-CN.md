@@ -1,8 +1,17 @@
-# claw-guard
+<p align="center">
+  <img src="assets/icon.svg" width="128" height="128" alt="claw-guard icon">
+</p>
 
-AI 驱动的 OpenClaw 宿主系统安全审计工具。23 条内置检测规则，9 个安全分类，可通过 Skill 扩展，支持 LLM 攻击链分析。
+<h1 align="center">claw-guard</h1>
 
-不检查 OpenClaw 配置对不对，而是检查：**OpenClaw 装在你的系统上之后，你的系统还安全吗？**
+<p align="center">
+  AI 驱动的 OpenClaw 宿主系统安全审计工具。<br>
+  23 条内置检测规则，9 个安全分类，可通过 Skill 扩展，支持 LLM 攻击链分析。
+</p>
+
+<p align="center">
+  不检查 OpenClaw 配置对不对，而是检查：<b>OpenClaw 装在你的系统上之后，你的系统还安全吗？</b>
+</p>
 
 ## 快速开始
 

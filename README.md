@@ -1,10 +1,21 @@
-# claw-guard
+<p align="center">
+  <img src="assets/icon.svg" width="128" height="128" alt="claw-guard icon">
+</p>
 
-AI-powered host system security audit tool for OpenClaw. 23 built-in detection rules across 9 categories, extensible via Skills, with LLM-driven attack chain analysis.
+<h1 align="center">claw-guard</h1>
 
-Doesn't check if OpenClaw is configured correctly — checks **what risks OpenClaw introduces to your host system**.
+<p align="center">
+  AI-powered host system security audit tool for OpenClaw.<br>
+  23 built-in detection rules across 9 categories, extensible via Skills, with LLM-driven attack chain analysis.
+</p>
 
-[中文文档](README.zh-CN.md)
+<p align="center">
+  Doesn't check if OpenClaw is configured correctly — checks <b>what risks OpenClaw introduces to your host system</b>.
+</p>
+
+<p align="center">
+  <a href="README.zh-CN.md">中文文档</a>
+</p>
 
 ## Quick Start
 

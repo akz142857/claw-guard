@@ -1,5 +1,8 @@
 use anyhow::Result;
-use tracing::info;
+use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 
 use super::adapter::{self, ResolvedConfig};
 use super::{AnalysisReport, AnalysisResult, Analyzer};
@@ -13,16 +16,48 @@ pub struct LocalAnalyzer {
 impl Analyzer for LocalAnalyzer {
     async fn analyze(&self, report: &AuditReport) -> Result<AnalysisResult> {
         let prompt = super::prompt::build_prompt(report);
-        info!(
-            "Analyzing with {} (model: {})...",
-            self.config.provider_name, self.config.model
-        );
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()?;
 
-        let response_text = adapter::call_llm(&client, &self.config, &prompt).await?;
+        // Start spinner
+        let running = Arc::new(AtomicBool::new(true));
+        let spinner_handle = {
+            let running = running.clone();
+            let provider = self.config.provider_name.clone();
+            let model = self.config.model.clone();
+            tokio::spawn(async move {
+                let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                let start = Instant::now();
+                let mut i = 0;
+                while running.load(Ordering::Relaxed) {
+                    let elapsed = start.elapsed().as_secs();
+                    eprint!(
+                        "\r  {} Analyzing with {} ({})... {}s ",
+                        frames[i % frames.len()],
+                        provider,
+                        model,
+                        elapsed,
+                    );
+                    let _ = std::io::stderr().flush();
+                    i += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                }
+                let elapsed = start.elapsed().as_secs_f64();
+                // Clear spinner line and print completion
+                eprint!("\r  ✓ Analysis complete ({:.1}s)                              \n", elapsed);
+                let _ = std::io::stderr().flush();
+            })
+        };
+
+        let result = adapter::call_llm(&client, &self.config, &prompt).await;
+
+        // Stop spinner
+        running.store(false, Ordering::Relaxed);
+        let _ = spinner_handle.await;
+
+        let response_text = result?;
         let analysis: AnalysisReport = parse_llm_response(&response_text)?;
         Ok(AnalysisResult {
             analysis,

@@ -62,22 +62,29 @@ impl AuditReport {
             .filter(|f| f.status == Status::Fail && f.severity == Severity::High)
             .count();
 
-        // Score: per-rule dedup — same rule failing multiple times only penalizes once.
-        // This prevents e.g. 5 world-readable credential dirs from draining 75 points.
-        let mut penalized_rules = std::collections::HashSet::new();
-        let mut penalty: usize = 0;
-        for f in findings.iter().filter(|f| f.status == Status::Fail) {
-            if penalized_rules.insert(f.rule_id.clone()) {
-                penalty += match f.severity {
-                    Severity::Critical => 15,
-                    Severity::High => 8,
-                    Severity::Medium => 4,
-                    Severity::Low => 2,
-                    Severity::Info => 0,
-                };
-            }
-        }
-        let score = 100u8.saturating_sub(penalty.min(100) as u8);
+        // ── Scoring: Weighted Category Pass-Rate Model ──────────────────
+        //
+        // Industry-standard approach (AWS Security Hub / CIS Benchmarks style):
+        //
+        // 1. Each category has an importance weight (total = 100 points).
+        //    Weight reflects risk impact: sandbox/credential matter more than plugins.
+        //
+        // 2. Within each category, each finding has a severity weight:
+        //    Critical=5, High=3, Medium=2, Low=1, Info=0.5
+        //    Passing a Critical check earns more points than passing an Info check.
+        //
+        // 3. Per-rule-id dedup: multiple findings from the same rule count once
+        //    (worst status wins: Fail > Warn > Error > Pass).
+        //
+        // 4. Category score = passed_weight / total_weight (0.0 to 1.0)
+        //    Final score = Σ(category_score × category_importance)
+        //
+        // Benefits:
+        //  - No single category can drag the score to 0
+        //  - Severity matters (passing Critical checks contributes more)
+        //  - Encourages balanced security posture across all categories
+
+        let score = compute_weighted_score(&findings);
 
         // Category breakdown
         let mut cat_map: HashMap<Category, (usize, usize, usize)> = HashMap::new();
@@ -302,6 +309,121 @@ impl AuditReport {
     }
 }
 
+/// Category importance weights (must sum to 100).
+/// Reflects risk impact: sandbox/credential outweigh plugins/filesystem.
+fn category_weight(cat: &Category) -> f64 {
+    match cat {
+        Category::Sandbox => 15.0,       // Single most impactful control
+        Category::Credential => 12.0,    // Credential theft → full compromise
+        Category::Network => 12.0,       // Network exposure → remote attack
+        Category::GatewayConfig => 10.0, // Gateway auth → command execution
+        Category::DestructiveAction => 10.0, // Prevents rm -rf / data loss
+        Category::Process => 10.0,       // Process security → host compromise
+        Category::CostSafety => 8.0,     // Financial risk
+        Category::DataLeak => 8.0,       // Data exfiltration
+        Category::Docker => 5.0,         // Container escape
+        Category::Plugin => 5.0,         // Plugin supply chain
+        Category::FileSystem => 5.0,     // File permission issues
+        Category::Skill => 0.0,          // Dynamic skills — not scored
+    }
+}
+
+/// Severity weight for scoring: how much a finding is "worth" when passed.
+fn severity_weight(sev: &Severity) -> f64 {
+    match sev {
+        Severity::Critical => 5.0,
+        Severity::High => 3.0,
+        Severity::Medium => 2.0,
+        Severity::Low => 1.0,
+        Severity::Info => 0.5,
+    }
+}
+
+/// Compute the weighted category pass-rate score (0-100).
+fn compute_weighted_score(findings: &[Finding]) -> u8 {
+    use std::collections::HashMap;
+
+    // Step 1: Per-rule-id dedup — keep worst status per rule
+    // Fail > Warn > Error > Skip > Pass
+    let status_rank = |s: &Status| -> u8 {
+        match s {
+            Status::Fail => 4,
+            Status::Warn => 3,
+            Status::Error => 2,
+            Status::Skip => 1,
+            Status::Pass => 0,
+        }
+    };
+
+    // Map: rule_id → (category, severity, worst_status)
+    let mut rule_map: HashMap<String, (Category, Severity, Status)> = HashMap::new();
+    for f in findings {
+        let entry = rule_map
+            .entry(f.rule_id.clone())
+            .or_insert((f.category, f.severity, f.status));
+        if status_rank(&f.status) > status_rank(&entry.2) {
+            entry.2 = f.status;
+        }
+        // Use the highest severity seen for this rule
+        if severity_weight(&f.severity) > severity_weight(&entry.1) {
+            entry.1 = f.severity;
+        }
+    }
+
+    // Step 2: Group by category, compute per-category pass rate
+    let mut cat_totals: HashMap<Category, (f64, f64)> = HashMap::new(); // (passed_weight, total_weight)
+    for (_rule_id, (cat, sev, status)) in &rule_map {
+        let w = severity_weight(sev);
+        let entry = cat_totals.entry(*cat).or_insert((0.0, 0.0));
+        entry.1 += w; // total
+        match status {
+            Status::Pass => entry.0 += w,            // full credit
+            Status::Warn => entry.0 += w * 0.5,      // partial credit for warnings
+            Status::Skip => entry.0 += w * 0.8,      // skipped ≈ not applicable, mostly OK
+            _ => {}                                    // Fail/Error = 0 credit
+        }
+    }
+
+    // Step 3: Weighted sum across categories
+    let mut earned = 0.0f64;
+    let mut possible = 0.0f64;
+
+    for (cat, (passed_w, total_w)) in &cat_totals {
+        let importance = category_weight(cat);
+        if importance == 0.0 || *total_w == 0.0 {
+            continue;
+        }
+        let pass_rate = passed_w / total_w; // 0.0 to 1.0
+        earned += pass_rate * importance;
+        possible += importance;
+    }
+
+    // Categories with no findings get full credit (nothing to fail)
+    // Add weight for categories that had no findings at all
+    let categories_with_findings: std::collections::HashSet<Category> =
+        cat_totals.keys().cloned().collect();
+    let all_categories = [
+        Category::Sandbox, Category::Credential, Category::Network,
+        Category::GatewayConfig, Category::DestructiveAction, Category::Process,
+        Category::CostSafety, Category::DataLeak, Category::Docker,
+        Category::Plugin, Category::FileSystem,
+    ];
+    for cat in &all_categories {
+        if !categories_with_findings.contains(cat) {
+            let w = category_weight(cat);
+            earned += w;   // full credit — no findings = no problems
+            possible += w;
+        }
+    }
+
+    if possible == 0.0 {
+        return 100;
+    }
+
+    let score = (earned / possible * 100.0).round() as u8;
+    score.min(100)
+}
+
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
@@ -327,11 +449,11 @@ fn score_bar(score: u8) -> String {
     let bar: String = "█".repeat(filled) + &"░".repeat(empty);
 
     let label = match score {
-        90..=100 => "Excellent",
-        70..=89 => "Good",
-        50..=69 => "Fair",
-        30..=49 => "Poor",
-        _ => "Critical",
+        90..=100 => "Excellent",  // A
+        75..=89 => "Good",        // B
+        60..=74 => "Fair",        // C
+        40..=59 => "Poor",        // D
+        _ => "Critical",          // F
     };
 
     format!("[{}] {}", bar, label)

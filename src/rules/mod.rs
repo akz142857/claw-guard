@@ -7,3 +7,5 @@ pub mod sandbox;
 pub mod plugin;
 pub mod dataleak;
 pub mod docker;
+pub mod cost;
+pub mod destructive;

@@ -8,7 +8,8 @@ use std::fmt;
 // ---------------------------------------------------------------------------
 // Rule ID convention:  CG-XNNN
 //   X = category letter:  C=Credential, F=FileSystem, N=Network, P=Process,
-//                          G=GatewayConfig, S=Sandbox, K=Plugin, D=DataLeak
+//                          G=GatewayConfig, S=Sandbox, K=Plugin, D=DataLeak,
+//                          T=Docker, $=CostSafety, X=DestructiveAction
 //   NNN = sequential number
 // ---------------------------------------------------------------------------
 
@@ -67,6 +68,8 @@ pub enum Category {
     Plugin,
     DataLeak,
     Docker,
+    CostSafety,
+    DestructiveAction,
     Skill,
 }
 
@@ -82,6 +85,8 @@ impl fmt::Display for Category {
             Category::Plugin => write!(f, "Plugin & Extension Security"),
             Category::DataLeak => write!(f, "Data Leak Detection"),
             Category::Docker => write!(f, "Container Security"),
+            Category::CostSafety => write!(f, "Cost Safety"),
+            Category::DestructiveAction => write!(f, "Destructive Action Protection"),
             Category::Skill => write!(f, "Skill"),
         }
     }

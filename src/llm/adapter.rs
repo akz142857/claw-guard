@@ -90,6 +90,15 @@ async fn call_openai_compat(
     let url = config.endpoint_url();
     debug!("OpenAI-compat POST {}", url);
 
+    // Newer OpenAI models (o1, gpt-4.1, gpt-5, etc.) require max_completion_tokens
+    // instead of max_tokens. Use max_completion_tokens for OpenAI provider,
+    // keep max_tokens for other OpenAI-compatible providers (broader compat).
+    let token_limit_key = if config.provider_name == "openai" {
+        "max_completion_tokens"
+    } else {
+        "max_tokens"
+    };
+
     let body = serde_json::json!({
         "model": config.model,
         "messages": [
@@ -97,7 +106,7 @@ async fn call_openai_compat(
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.3,
-        "max_tokens": 4096,
+        token_limit_key: 4096,
     });
 
     let mut req = client.post(&url).header("Content-Type", "application/json");

@@ -37,5 +37,20 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(rules::dataleak::cg_d003::CgD003),
         // ── Container Security (CG-T*) ──────────────────────────────────
         Box::new(rules::docker::cg_t001::CgT001),
+        // ── Cost Safety (CG-M*) ────────────────────────────────────────
+        Box::new(rules::cost::cg_m001::CgM001),
+        Box::new(rules::cost::cg_m002::CgM002),
+        Box::new(rules::cost::cg_m003::CgM003),
+        // ── Destructive Action Protection (CG-X*) ──────────────────────
+        Box::new(rules::destructive::cg_x001::CgX001),
+        Box::new(rules::destructive::cg_x002::CgX002),
+        Box::new(rules::destructive::cg_x003::CgX003),
+        Box::new(rules::destructive::cg_x004::CgX004),
+        // ── Anti-Intrusion (extended Network & Process) ─────────────────
+        Box::new(rules::network::cg_n004::CgN004),
+        Box::new(rules::network::cg_n005::CgN005),
+        Box::new(rules::process::cg_p003::CgP003),
+        Box::new(rules::process::cg_p004::CgP004),
+        Box::new(rules::process::cg_p005::CgP005),
     ]
 }

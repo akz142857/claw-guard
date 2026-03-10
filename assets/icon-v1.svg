@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="shield" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="claw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f87171"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+    <clipPath id="shield-clip">
+      <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shield fill -->
+  <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
+        fill="url(#shield)"/>
+
+  <!-- Three claw slashes — cut through shield, revealing dark beneath -->
+  <g clip-path="url(#shield-clip)">
+    <path d="M152 80 Q140 200 120 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
+    <path d="M264 55 Q250 210 236 430" stroke="#0f172a" stroke-width="48" stroke-linecap="round" fill="none"/>
+    <path d="M368 80 Q380 200 400 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- Shield outline -->
+  <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
+        fill="none" stroke="#059669" stroke-width="6" stroke-linejoin="round"/>
+</svg>

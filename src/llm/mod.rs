@@ -1,5 +1,7 @@
+pub mod adapter;
 pub mod local;
 pub mod prompt;
+pub mod providers;
 pub mod remote;
 
 use anyhow::Result;
@@ -34,24 +36,6 @@ pub struct Action {
     pub command: String,
     pub reason: String,
     pub finding_ids: Vec<String>,
-}
-
-/// Provider selection
-#[derive(Debug, Clone, clap::ValueEnum)]
-pub enum Provider {
-    Anthropic,
-    Openai,
-    Ollama,
-}
-
-impl std::fmt::Display for Provider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Provider::Anthropic => write!(f, "anthropic"),
-            Provider::Openai => write!(f, "openai"),
-            Provider::Ollama => write!(f, "ollama"),
-        }
-    }
 }
 
 /// Result from an analyzer — analysis + optional web URL (remote mode)

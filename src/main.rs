@@ -66,17 +66,24 @@ struct Cli {
     #[arg(long, env = "CLAW_GUARD_API_KEY", hide_env_values = true)]
     api_key: Option<String>,
 
-    /// LLM provider for local mode
-    #[arg(long, value_enum, default_value_t = llm::Provider::Anthropic)]
-    provider: llm::Provider,
+    /// LLM provider name (anthropic, openai, ollama, openrouter, together, mistral,
+    /// deepseek, moonshot, glm, qwen, nvidia, minimax, huggingface, cloudflare, etc.)
+    /// Use --list-providers to see all supported providers.
+    #[arg(long, default_value = "anthropic")]
+    provider: String,
 
-    /// LLM model name
+    /// LLM model name (overrides provider default)
     #[arg(long)]
     model: Option<String>,
 
-    /// Ollama server URL (local mode only)
-    #[arg(long, default_value = "http://localhost:11434")]
-    ollama_url: String,
+    /// Custom base URL for any OpenAI-compatible endpoint.
+    /// Overrides the provider's default URL. Useful for proxies, gateways, or unlisted providers.
+    #[arg(long)]
+    base_url: Option<String>,
+
+    /// List all supported LLM providers and exit
+    #[arg(long)]
+    list_providers: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -119,6 +126,25 @@ async fn main() -> Result<()> {
                 warn!("Failed to load skills from {}: {}", skill_dir.display(), e);
             }
         }
+    }
+
+    // ── --list-providers ──────────────────────────────────────────────
+    if cli.list_providers {
+        println!(
+            "{:<16} {:<28} {:<30} {}",
+            "PROVIDER", "DISPLAY NAME", "DEFAULT MODEL", "BASE URL"
+        );
+        println!("{}", "-".repeat(100));
+        for p in llm::providers::all_providers() {
+            println!(
+                "{:<16} {:<28} {:<30} {}",
+                p.name, p.display_name, p.default_model, p.base_url
+            );
+        }
+        println!(
+            "\nTip: use --base-url to override any provider's URL, or connect to unlisted OpenAI-compatible endpoints."
+        );
+        return Ok(());
     }
 
     // ── --list-rules ────────────────────────────────────────────────────
@@ -256,27 +282,54 @@ async fn run_analysis(
             let api_key = match &cli.api_key {
                 Some(k) if !k.is_empty() => k.clone(),
                 _ => {
-                    info!("No API key provided, skipping LLM analysis. Use --api-key or set CLAW_GUARD_API_KEY");
-                    return Ok(None);
+                    // Allow empty key for providers that don't require auth (ollama, vllm, etc.)
+                    let provider = llm::providers::find_provider(&cli.provider);
+                    let needs_key = provider
+                        .map(|p| p.auth_type != llm::providers::AuthType::None)
+                        .unwrap_or(true);
+                    if needs_key {
+                        info!("No API key provided, skipping LLM analysis. Use --api-key or set CLAW_GUARD_API_KEY");
+                        return Ok(None);
+                    }
+                    String::new()
                 }
             };
 
-            // Default model per provider
-            let model = cli.model.clone().unwrap_or_else(|| {
-                match cli.provider {
-                    llm::Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
-                    llm::Provider::Openai => "gpt-4o".to_string(),
-                    llm::Provider::Ollama => "llama3".to_string(),
+            let config = match llm::providers::find_provider(&cli.provider) {
+                Some(provider_config) => llm::adapter::ResolvedConfig::from_provider(
+                    provider_config,
+                    api_key,
+                    cli.model.clone(),
+                    cli.base_url.clone(),
+                ),
+                None => {
+                    // Unknown provider — require --base-url, assume OpenAI-compatible
+                    let base_url = match &cli.base_url {
+                        Some(url) => url.clone(),
+                        None => {
+                            let known: Vec<_> = llm::providers::all_providers()
+                                .iter()
+                                .map(|p| p.name)
+                                .collect();
+                            error!(
+                                "Unknown provider '{}'. Known providers: {}. Or use --base-url for custom endpoints.",
+                                cli.provider,
+                                known.join(", ")
+                            );
+                            return Ok(None);
+                        }
+                    };
+                    let model = cli.model.clone().unwrap_or_else(|| "default".to_string());
+                    llm::adapter::ResolvedConfig::custom(
+                        cli.provider.clone(),
+                        base_url,
+                        api_key,
+                        model,
+                    )
                 }
-            });
-
-            let analyzer = llm::local::LocalAnalyzer {
-                provider: cli.provider.clone(),
-                api_key,
-                model,
-                ollama_url: cli.ollama_url.clone(),
             };
 
+            let analyzer = llm::local::LocalAnalyzer { config };
             let result = analyzer.analyze(report).await?;
             Ok(Some(result))
         }

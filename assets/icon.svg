@@ -1,30 +1,158 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-84 -140 680 680">
   <defs>
+    <!-- Wow Filters -->
+    <filter id="neon-cyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur1" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="neon-red" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur1" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="drop-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="15" flood-color="#000000" flood-opacity="0.8"/>
+    </filter>
+
+    <filter id="shadow-claws" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="6" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
+
+    <!-- Gradients -->
+    <!-- OpenClaw Body Gradient -->
+    <radialGradient id="claw-body" cx="40%" cy="15%" r="70%">
+      <stop offset="0%" stop-color="#fca5a5"/>
+      <stop offset="15%" stop-color="#ef4444"/>
+      <stop offset="65%" stop-color="#b91c1c"/>
+      <stop offset="100%" stop-color="#450a0a"/>
+    </radialGradient>
+
+    <!-- Hand Gradient -->
+    <radialGradient id="claw-hand" cx="35%" cy="20%" r="70%">
+      <stop offset="0%" stop-color="#fca5a5"/>
+      <stop offset="25%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#7f1d1d"/>
+    </radialGradient>
+
+    <!-- Auras -->
+    <radialGradient id="aura-cyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.5"/>
+      <stop offset="40%" stop-color="#0891b2" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    
+    <radialGradient id="aura-red" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ef4444" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#991b1b" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Original Shield Gradients -->
     <linearGradient id="shield" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0%" stop-color="#34d399"/>
       <stop offset="100%" stop-color="#059669"/>
     </linearGradient>
-    <linearGradient id="claw" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#f87171"/>
-      <stop offset="100%" stop-color="#dc2626"/>
-    </linearGradient>
+
     <clipPath id="shield-clip">
       <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"/>
     </clipPath>
   </defs>
 
-  <!-- Shield fill -->
-  <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
-        fill="url(#shield)"/>
+  <!-- Giant Atmospheric Auras -->
+  <!-- Warm red glow behind the creature -->
+  <circle cx="256" cy="150" r="340" fill="url(#aura-red)" pointer-events="none"/>
+  <!-- Cool cyan glow highlighting the eyes from the background -->
+  <circle cx="256" cy="-20" r="260" fill="url(#aura-cyan)" pointer-events="none"/>
 
-  <!-- Three claw slashes — cut through shield, revealing dark beneath -->
-  <g clip-path="url(#shield-clip)">
-    <path d="M152 80 Q140 200 120 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
-    <path d="M264 55 Q250 210 236 430" stroke="#0f172a" stroke-width="48" stroke-linecap="round" fill="none"/>
-    <path d="M368 80 Q380 200 400 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
+  <!-- === OPENCLAW BODY (Behind the shield) === -->
+  <g id="openclaw">
+    <!-- Antennas -->
+    <g filter="url(#drop-shadow)">
+      <!-- Left Antenna -->
+      <path d="M210 -40 Q170 -100 130 -80" fill="none" stroke="url(#claw-hand)" stroke-width="14" stroke-linecap="round"/>
+      <circle cx="130" cy="-80" r="8" fill="#fca5a5" filter="url(#neon-red)"/>
+      
+      <!-- Right Antenna -->
+      <path d="M302 -40 Q342 -100 382 -80" fill="none" stroke="url(#claw-hand)" stroke-width="14" stroke-linecap="round"/>
+      <circle cx="382" cy="-80" r="8" fill="#fca5a5" filter="url(#neon-red)"/>
+    </g>
+
+    <!-- Main Round Body with 3D shadow to elevate it out of the void -->
+    <circle cx="256" cy="110" r="190" fill="url(#claw-body)" filter="url(#drop-shadow)"/>
+
+    <!-- Eyes Glowing -->
+    <g>
+      <!-- Left Eye -->
+      <circle cx="190" cy="-10" r="24" fill="#06b6d4" filter="url(#neon-cyan)"/>
+      <!-- Soft Iris Base -->
+      <ellipse cx="190" cy="-10" rx="16" ry="12" fill="#cffafe"/>
+      <!-- Outer reflective highlight -->
+      <circle cx="184" cy="-15" r="5" fill="#ffffff" opacity="0.95"/>
+      <circle cx="196" cy="-6" r="2" fill="#ffffff" opacity="0.6"/>
+      <!-- Pupil -->
+      <circle cx="190" cy="-10" r="6" fill="#082f49"/>
+
+      <!-- Right Eye -->
+      <circle cx="322" cy="-10" r="24" fill="#06b6d4" filter="url(#neon-cyan)"/>
+      <ellipse cx="322" cy="-10" rx="16" ry="12" fill="#cffafe"/>
+      <!-- High-gloss reflections -->
+      <circle cx="316" cy="-15" r="5" fill="#ffffff" opacity="0.95"/>
+      <circle cx="328" cy="-6" r="2" fill="#ffffff" opacity="0.6"/>
+      <!-- Pupil -->
+      <circle cx="322" cy="-10" r="6" fill="#082f49"/>
+    </g>
   </g>
 
-  <!-- Shield outline -->
-  <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
-        fill="none" stroke="#059669" stroke-width="6" stroke-linejoin="round"/>
+  <!-- === ORIGINAL SHIELD (Foreground, with realistic volumetric shadow!) === -->
+  <g id="shield-front" filter="url(#drop-shadow)">
+    <!-- Original Shield fill -->
+    <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
+          fill="url(#shield)"/>
+
+    <!-- The original three claw slashes - perfect dark void cuts -->
+    <g clip-path="url(#shield-clip)">
+      <path d="M152 80 Q140 200 120 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
+      <path d="M264 55 Q250 210 236 430" stroke="#0f172a" stroke-width="48" stroke-linecap="round" fill="none"/>
+      <path d="M368 80 Q380 200 400 400" stroke="#0f172a" stroke-width="42" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <!-- Original Shield outline -->
+    <path d="M256 42 L440 120 C444 136 448 220 424 300 C400 380 336 440 256 478 C176 440 112 380 88 300 C64 220 68 136 72 120 Z"
+          fill="none" stroke="#059669" stroke-width="6" stroke-linejoin="round"/>
+  </g>
+
+  <!-- === OPENCLAW HANDS (On top of the shield edge) === -->
+  <!-- Floating slightly in front casting shadows down onto the green shield -->
+  <g filter="url(#shadow-claws)">
+    <!-- Left Hand grasping the edge -->
+    <!-- Positioned along the left slope: (256,42) down to (72,120) -->
+    <g transform="translate(170, 78) rotate(-22)">
+      <ellipse cx="0" cy="0" rx="36" ry="24" fill="url(#claw-hand)"/>
+      <!-- Soft hand highlight for 3D fatness -->
+      <ellipse cx="-12" cy="-8" rx="14" ry="8" fill="#fca5a5" opacity="0.65" transform="rotate(-15 -12 -8)"/>
+      <!-- Subtle cute inner claw strokes -->
+      <path d="M -10 14 L -5 -3" stroke="#7f1d1d" stroke-width="5" stroke-linecap="round"/>
+      <path d="M 12 14 L 7 -3" stroke="#7f1d1d" stroke-width="5" stroke-linecap="round"/>
+    </g>
+
+    <!-- Right Hand grasping the edge -->
+    <!-- Positioned along the right slope: (256,42) down to (440,120) -->
+    <g transform="translate(342, 78) rotate(22)">
+      <ellipse cx="0" cy="0" rx="36" ry="24" fill="url(#claw-hand)"/>
+      <ellipse cx="12" cy="-8" rx="14" ry="8" fill="#fca5a5" opacity="0.65" transform="rotate(15 12 -8)"/>
+      <path d="M 10 14 L 5 -3" stroke="#7f1d1d" stroke-width="5" stroke-linecap="round"/>
+      <path d="M -12 14 L -7 -3" stroke="#7f1d1d" stroke-width="5" stroke-linecap="round"/>
+    </g>
+  </g>
 </svg>

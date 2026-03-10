@@ -1,6 +1,6 @@
 # claw-guard
 
-Host system security audit tool for OpenClaw. 23 detection rules across 9 categories, covering the full attack surface from credential exposure to container escape.
+AI-powered host system security audit tool for OpenClaw. 23 built-in detection rules across 9 categories, extensible via Skills, with LLM-driven attack chain analysis.
 
 Doesn't check if OpenClaw is configured correctly — checks **what risks OpenClaw introduces to your host system**.
 
@@ -11,18 +11,29 @@ Doesn't check if OpenClaw is configured correctly — checks **what risks OpenCl
 ```sh
 cargo build --release
 
-# Full audit
+# Full audit (classic mode, no LLM)
+./target/release/claw-guard --no-upload --no-analyze
+
+# AI-powered audit (Anthropic)
+export CLAW_GUARD_API_KEY=sk-ant-xxx
 ./target/release/claw-guard --no-upload
 
-# Filter by category
-./target/release/claw-guard --no-upload --category gateway
+# AI-powered audit (OpenAI / Ollama)
+./target/release/claw-guard --no-upload --provider openai --api-key sk-xxx
+./target/release/claw-guard --no-upload --provider ollama --model llama3
 
-# List all rules
-./target/release/claw-guard --list-rules
+# Filter by category
+./target/release/claw-guard --no-upload --no-analyze --category gateway
+
+# Load community skills
+./target/release/claw-guard --no-upload --no-analyze --skill-dir ./examples/skills
+
+# List all rules + skills
+./target/release/claw-guard --list-rules --skill-dir ./examples/skills
 
 # JSON output / save report
-./target/release/claw-guard --no-upload --json
-./target/release/claw-guard --no-upload --output report.json
+./target/release/claw-guard --no-upload --no-analyze --json
+./target/release/claw-guard --no-upload --no-analyze --output report.json
 ```
 
 ## Example Output
@@ -35,19 +46,18 @@ cargo build --release
   Host:     my-server  (linux)
   Time:     2026-03-09T17:48:00+00:00
   Version:  0.1.0
-  Score:    62/100  [████████████░░░░░░░░] Fair
+  Score:    54/100  [██████████░░░░░░░░░░] Fair
 
-  Rules: 23  |  Pass: 17  Fail: 3  Warn: 1  Skip: 8
+  Rules: 23 + 3 skills  |  Pass: 17  Fail: 6  Warn: 4  Skip: 8
 
-  !! 2 CRITICAL finding(s) !!
-  !  1 HIGH finding(s)
+  !! 4 CRITICAL finding(s) !!
+  !  2 HIGH finding(s)
 
   ── Category Breakdown ──
-  ✗ Credential Exposure             6 checks   2 fail   0 warn
+  ✗ Credential Exposure             9 checks   5 fail   2 warn
   ✗ Data Leak Detection             4 checks   1 fail   0 warn
-  ⚠ Sandbox & Isolation             2 checks   0 fail   1 warn
+  ⚠ Network Exposure                4 checks   0 fail   1 warn
   ✓ Gateway Configuration           4 checks   0 fail   0 warn
-  ✓ Network Exposure                3 checks   0 fail   0 warn
   ...
 
   ── Findings ──
@@ -60,13 +70,141 @@ cargo build --release
     API key patterns in ~/.zsh_history
     evidence: file=~/.zsh_history types=[openai, anthropic]
     fix: Rotate exposed keys. Use secret managers.
+
+  ── AI Analysis ──────────────────────────────────
+
+  Summary:
+  Your system has a credential theft attack chain: ~/.aws is
+  world-readable AND API keys appear in shell history. An attacker
+  with local access could extract AWS credentials in seconds.
+
+  Attack Chains:
+  1. [High] Credential Theft via History
+     CG-C001 + CG-D001 → AWS account takeover
+
+  Priority Fixes:
+  1. chmod 700 ~/.aws ~/.ssh ~/.docker
+     ← blocks credential theft chain (CG-C001)
+  2. Rotate leaked keys in shell history
+     ← damage control (CG-D001)
+
+  ─────────────────────────────────────────────────
 ```
 
 Exit codes: `0` all clear, `1` HIGH findings, `2` CRITICAL findings. CI/CD friendly.
 
+## AI Analysis
+
+claw-guard uses LLM to go beyond pass/fail — it identifies **attack chains** (combinations of findings that create exploitable paths), prioritizes fixes by impact, and provides environment-specific advice.
+
+### Two Modes
+
+| Mode | How | Best For |
+|------|-----|----------|
+| **Local** (default) | Your own API key, analysis runs on your machine | Privacy-first, air-gapped environments |
+| **Remote** | Sends findings to install9 platform for analysis | Continuous monitoring, historical trends |
+
+### Supported Providers (Local Mode)
+
+| Provider | Flag | Default Model |
+|----------|------|---------------|
+| Anthropic | `--provider anthropic` | claude-sonnet-4-20250514 |
+| OpenAI | `--provider openai` | gpt-4o |
+| Ollama | `--provider ollama` | llama3 |
+
+```sh
+# Local with Anthropic (default)
+export CLAW_GUARD_API_KEY=sk-ant-xxx
+claw-guard --no-upload
+
+# Local with Ollama (fully offline)
+claw-guard --no-upload --provider ollama --model llama3
+
+# Remote mode (sends to install9 platform)
+claw-guard --mode remote --platform-id my-server-id
+
+# Skip AI analysis entirely
+claw-guard --no-upload --no-analyze
+```
+
+## Skills
+
+Skills are community-contributed security checks in Markdown format. Each skill contains a bash command that outputs structured JSON, letting anyone extend claw-guard without writing Rust.
+
+### Using Skills
+
+```sh
+# Load from a directory
+claw-guard --no-upload --no-analyze --skill-dir ./my-skills
+
+# Default directory: ~/.claw-guard/skills/
+# Skip all skills
+claw-guard --no-upload --no-analyze --no-skills
+```
+
+### Writing a Skill
+
+Create a `.md` file with YAML frontmatter and an `## Evaluate` section:
+
+```markdown
+---
+name: npm-audit
+description: Check npm packages for known vulnerabilities
+version: 1.0.0
+category: plugin
+severity: high
+id: SK-NPM001
+remediation: Run 'npm audit fix'
+timeout: 60
+---
+
+# npm Audit Check
+
+## Evaluate
+
+\```bash
+if ! command -v npm >/dev/null 2>&1; then
+  echo '{"status":"skip","detail":"npm not installed"}'
+  exit 0
+fi
+# ... check logic ...
+echo '{"status":"pass","detail":"No vulnerabilities found"}'
+\```
+```
+
+**Output protocol** — each line must be a JSON object:
+
+```json
+{"status": "pass|fail|warn|skip", "detail": "description", "evidence": "optional data"}
+```
+
+**Frontmatter fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Skill name |
+| `description` | No | What this skill checks |
+| `category` | No | Maps to claw-guard category (credential/network/plugin/etc.) |
+| `severity` | No | critical/high/medium/low/info (default: medium) |
+| `id` | No | Rule ID (default: auto-generated from name) |
+| `remediation` | No | Fix instructions shown on failure |
+| `timeout` | No | Max execution time in seconds (default: 30) |
+
+**Security:** Skill commands run with sensitive environment variables stripped (AWS keys, API tokens, etc.) and enforce a timeout. Only install skills you trust.
+
+### Skill Directory Layout
+
+```
+~/.claw-guard/skills/
+├── check-npm-audit.md          # Flat .md file
+├── check-git-secrets.md
+└── my-custom-check/
+    └── SKILL.md                # Or subdirectory with SKILL.md
+```
+
 ## Detection Rules
 
-Each rule has a unique ID (`CG-XNNN`), category, severity, and remediation advice.
+23 built-in rules, each with a unique ID (`CG-XNNN`), category, severity, and remediation advice.
 
 ### Credential Exposure (CG-C)
 
@@ -140,11 +278,20 @@ Each rule has a unique ID (`CG-XNNN`), category, severity, and remediation advic
 
 ```
 src/
-├── main.rs              # CLI entry point
+├── main.rs              # CLI entry point, orchestration
 ├── platform.rs          # Cross-platform path abstraction (macOS/Linux/Windows)
 ├── engine/
-│   ├── mod.rs           # Rule trait, Finding, Severity, Category definitions
-│   └── registry.rs      # Rule registry
+│   ├── mod.rs           # Rule/StaticRule traits, Finding, Severity, Category
+│   ├── registry.rs      # Built-in rule registry
+│   └── skill/
+│       ├── mod.rs       # Skill loader (directory scanning)
+│       ├── parser.rs    # SKILL.md frontmatter + ## Evaluate parser
+│       └── runner.rs    # Sandboxed command execution + JSON output parsing
+├── llm/
+│   ├── mod.rs           # Analyzer trait, AnalysisReport types
+│   ├── prompt.rs        # Findings → LLM prompt builder
+│   ├── local.rs         # Local mode (Anthropic/OpenAI/Ollama API calls)
+│   └── remote.rs        # Remote mode (install9 platform)
 ├── rules/
 │   ├── credential/      # CG-C001 ~ CG-C003
 │   ├── filesystem/      # CG-F001 ~ CG-F003
@@ -159,11 +306,16 @@ src/
     └── mod.rs           # Report generation, scoring, terminal/JSON output
 ```
 
-One file per rule, self-contained metadata + detection logic. Adding a new rule takes three steps:
+### Adding a Built-in Rule
 
-1. Create `cg_xxxx.rs` in the appropriate category directory, implement the `Rule` trait
+1. Create `cg_xxxx.rs` in the appropriate category directory, implement `StaticRule`
 2. Declare it in the category `mod.rs`
 3. Register it in `engine/registry.rs`
+
+### Adding a Skill (No Rust Required)
+
+1. Create a `.md` file with frontmatter + `## Evaluate` bash block
+2. Drop it in `~/.claw-guard/skills/` or pass `--skill-dir`
 
 ## Data Privacy
 
@@ -179,17 +331,34 @@ claw-guard collects only structured metadata. It **never uploads** file contents
 }
 ```
 
+- **Local mode**: Findings are sent to the LLM provider you choose. No data goes to install9.
+- **Remote mode**: Structured findings (never raw files) are sent to install9.ai for analysis.
+- **Skill sandboxing**: Sensitive env vars (AWS keys, API tokens, etc.) are stripped from skill command execution.
+
 ## CLI
 
 ```
 Options:
-    --platform-id <ID>     Platform ID for report upload
-    --json                 JSON output
-    --output <PATH>        Save report to file
-    --category <NAME>      Only run rules in this category
-    --list-rules           List all detection rules
-    --no-upload            Skip upload
-    --api-url <URL>        Report upload endpoint
+    --platform-id <ID>       Platform ID for report upload
+    --json                   JSON output
+    --output <PATH>          Save report to file
+    --category <NAME>        Only run rules in this category
+    --list-rules             List all detection rules
+    --no-upload              Skip upload to platform
+    --api-url <URL>          API base URL [default: https://install9.ai/api/claw-guard]
+
+  Skills:
+    --skill-dir <PATH>       Skill directory [default: ~/.claw-guard/skills/]
+    --no-skills              Skip loading skills
+
+  AI Analysis:
+    --mode <local|remote>    Analysis mode [default: local]
+    --no-analyze             Skip LLM analysis (classic mode)
+    --api-key <KEY>          LLM API key (or set CLAW_GUARD_API_KEY)
+    --provider <PROVIDER>    anthropic | openai | ollama [default: anthropic]
+    --model <MODEL>          LLM model name
+    --ollama-url <URL>       Ollama server URL [default: http://localhost:11434]
+
     -h, --help
     -V, --version
 ```

@@ -27,7 +27,7 @@ struct Cli {
     output: Option<String>,
 
     /// API base URL for the install9 platform
-    #[arg(long, default_value = "https://install9.ai/api/claw-guard")]
+    #[arg(long, default_value = "https://install9.ai/api/v1/claw-guard")]
     api_url: String,
 
     /// Skip uploading report to platform
@@ -250,7 +250,7 @@ async fn main() -> Result<()> {
     // Upload (raw report, separate from analysis)
     if !cli.no_upload {
         if let Some(ref _pid) = cli.platform_id {
-            let upload_url = format!("{}/report", cli.api_url.trim_end_matches('/'));
+            let upload_url = format!("{}/reports", cli.api_url.trim_end_matches('/'));
             info!("Uploading report to {}...", upload_url);
             match upload_report(&upload_url, &report).await {
                 Ok(_) => info!("Report uploaded successfully"),

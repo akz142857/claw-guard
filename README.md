@@ -443,7 +443,7 @@ Options:
     --list-rules             List all detection rules
     --list-providers         List all supported LLM providers
     --no-upload              Skip upload to platform
-    --api-url <URL>          API base URL [default: https://install9.ai/api/claw-guard]
+    --api-url <URL>          API base URL [default: https://install9.ai/api/v1/claw-guard]
 
   Skills:
     --skill-dir <PATH>       Skill directory [default: ~/.claw-guard/skills/]

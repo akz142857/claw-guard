@@ -1,0 +1,190 @@
+use anyhow::{bail, Result};
+use tracing::info;
+
+use super::{AnalysisReport, AnalysisResult, Analyzer, Provider};
+use crate::report::AuditReport;
+
+pub struct LocalAnalyzer {
+    pub provider: Provider,
+    pub api_key: String,
+    pub model: String,
+    pub ollama_url: String,
+}
+
+#[async_trait::async_trait]
+impl Analyzer for LocalAnalyzer {
+    async fn analyze(&self, report: &AuditReport) -> Result<AnalysisResult> {
+        let prompt = super::prompt::build_prompt(report);
+        info!("Analyzing with {} (model: {})...", self.provider, self.model);
+
+        let response_text = match self.provider {
+            Provider::Anthropic => self.call_anthropic(&prompt).await?,
+            Provider::Openai => self.call_openai(&prompt).await?,
+            Provider::Ollama => self.call_ollama(&prompt).await?,
+        };
+
+        // Parse the LLM response — try to extract JSON
+        let analysis: AnalysisReport = parse_llm_response(&response_text)?;
+        Ok(AnalysisResult {
+            analysis,
+            web_url: None,
+        })
+    }
+}
+
+impl LocalAnalyzer {
+    async fn call_anthropic(&self, prompt: &str) -> Result<String> {
+        let client = reqwest::Client::new();
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        });
+
+        let resp = client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Anthropic API error ({}): {}", status, text);
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+        let text = json["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Ok(text)
+    }
+
+    async fn call_openai(&self, prompt: &str) -> Result<String> {
+        let client = reqwest::Client::new();
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a security analyst. Output only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4096,
+        });
+
+        let resp = client
+            .post("https://api.openai.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            bail!("OpenAI API error ({}): {}", status, text);
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+        let text = json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Ok(text)
+    }
+
+    async fn call_ollama(&self, prompt: &str) -> Result<String> {
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/generate", self.ollama_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": self.model,
+            "prompt": prompt,
+            "stream": false,
+            "options": {
+                "temperature": 0.3,
+                "num_predict": 4096,
+            }
+        });
+
+        let resp = client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Ollama API error ({}): {}", status, text);
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+        let text = json["response"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Ok(text)
+    }
+}
+
+/// Parse LLM response text into AnalysisReport.
+/// Handles common LLM quirks: markdown fencing, leading text, etc.
+fn parse_llm_response(text: &str) -> Result<AnalysisReport> {
+    // Try direct parse first
+    if let Ok(report) = serde_json::from_str::<AnalysisReport>(text) {
+        return Ok(report);
+    }
+
+    // Try to extract JSON from markdown code block
+    let json_str = if let Some(start) = text.find("```json") {
+        let after = &text[start + 7..];
+        if let Some(end) = after.find("```") {
+            &after[..end]
+        } else {
+            after
+        }
+    } else if let Some(start) = text.find("```") {
+        let after = &text[start + 3..];
+        if let Some(end) = after.find("```") {
+            &after[..end]
+        } else {
+            after
+        }
+    } else if let Some(start) = text.find('{') {
+        // Find the matching closing brace
+        let mut depth = 0;
+        let mut end_pos = text.len();
+        for (i, ch) in text[start..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_pos = start + i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        &text[start..end_pos]
+    } else {
+        text
+    };
+
+    let trimmed = json_str.trim();
+    serde_json::from_str::<AnalysisReport>(trimmed).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse LLM response as AnalysisReport: {}. Response: {}",
+            e,
+            &text[..text.len().min(500)]
+        )
+    })
+}

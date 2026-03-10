@@ -1,4 +1,5 @@
 pub mod registry;
+pub mod skill;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,7 @@ pub enum Category {
     Plugin,
     DataLeak,
     Docker,
+    Skill,
 }
 
 impl fmt::Display for Category {
@@ -80,6 +82,7 @@ impl fmt::Display for Category {
             Category::Plugin => write!(f, "Plugin & Extension Security"),
             Category::DataLeak => write!(f, "Data Leak Detection"),
             Category::Docker => write!(f, "Container Security"),
+            Category::Skill => write!(f, "Skill"),
         }
     }
 }

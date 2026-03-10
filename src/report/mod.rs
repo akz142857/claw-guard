@@ -14,6 +14,12 @@ pub struct AuditReport {
     pub summary: ReportSummary,
     pub categories: Vec<CategorySummary>,
     pub findings: Vec<Finding>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<crate::llm::AnalysisReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skills_loaded: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -121,6 +127,9 @@ impl AuditReport {
             },
             categories,
             findings,
+            analysis: None,
+            skills_loaded: None,
+            web_url: None,
         }
     }
 
@@ -141,9 +150,14 @@ impl AuditReport {
         println!();
 
         // Summary bar
+        let skills_str = match self.skills_loaded {
+            Some(n) if n > 0 => format!(" + {} skills", n),
+            _ => String::new(),
+        };
         println!(
-            "  Rules: {}  |  Pass: {}  Fail: {}  Warn: {}  Skip: {}",
+            "  Rules: {}{}  |  Pass: {}  Fail: {}  Warn: {}  Skip: {}",
             self.summary.total_rules,
+            skills_str,
             self.summary.pass,
             self.summary.fail,
             self.summary.warn,
@@ -221,8 +235,89 @@ impl AuditReport {
             }
         }
 
+        // AI Analysis
+        if let Some(ref analysis) = self.analysis {
+            println!("  ── AI Analysis ──────────────────────────────────");
+            println!();
+            println!("  Summary:");
+            // Word-wrap at ~70 chars
+            for line in wrap_text(&analysis.executive_summary, 70) {
+                println!("  {}", line);
+            }
+            println!();
+
+            if !analysis.risk_chains.is_empty() {
+                println!("  Attack Chains:");
+                for (i, chain) in analysis.risk_chains.iter().enumerate() {
+                    println!(
+                        "  {}. [{}] {}",
+                        i + 1,
+                        chain.likelihood,
+                        chain.name
+                    );
+                    println!(
+                        "     {} → {}",
+                        chain.finding_ids.join(" + "),
+                        chain.impact
+                    );
+                }
+                println!();
+            }
+
+            if !analysis.priority_actions.is_empty() {
+                println!("  Priority Fixes:");
+                for action in &analysis.priority_actions {
+                    println!(
+                        "  {}. {}",
+                        action.priority, action.command
+                    );
+                    println!(
+                        "     ← {} ({})",
+                        action.reason,
+                        action.finding_ids.join(", ")
+                    );
+                }
+                println!();
+            }
+
+            if !analysis.context_notes.is_empty() {
+                println!("  Notes:");
+                for note in &analysis.context_notes {
+                    println!("  • {}", note);
+                }
+                println!();
+            }
+
+            println!("  ─────────────────────────────────────────────────");
+        }
+
+        // Web URL
+        if let Some(ref url) = self.web_url {
+            println!();
+            println!("  Web report: {}", url);
+        }
+
         println!();
     }
+}
+
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.len() + word.len() + 1 > width && !current.is_empty() {
+            lines.push(current.clone());
+            current.clear();
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 fn score_bar(score: u8) -> String {

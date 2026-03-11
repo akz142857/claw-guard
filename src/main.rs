@@ -10,52 +10,27 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
 
+const API_URL: &str = "https://install9.ai/api/claw-guard";
+
 #[derive(Parser, Debug)]
 #[command(name = "claw-guard")]
 #[command(about = "AI Agent host system security audit tool")]
 #[command(version)]
 struct Cli {
-    /// Output report as JSON to stdout
-    #[arg(long)]
-    json: bool,
-
-    /// Save report to file
-    #[arg(long)]
-    output: Option<String>,
-
-    /// API base URL for the install9 platform
-    #[arg(long, default_value = "https://install9.ai/api/claw-guard")]
-    api_url: String,
-
-    /// Skip uploading report to platform (pure local mode, no registration)
+    /// Skip uploading report to platform (disables agent registration, report upload,
+    /// and server-side analysis — fully offline mode)
     #[arg(long)]
     no_upload: bool,
-
-    /// Only run rules matching this category (e.g. credential, gateway, sandbox, skill)
-    #[arg(long)]
-    category: Option<String>,
 
     /// List all detection rules and exit
     #[arg(long)]
     list_rules: bool,
 
-    // ── Skills ──────────────────────────────────────────────────────────
-
-    /// Directory to load skill .md files from (default: ~/.claw-guard/skills/)
-    #[arg(long)]
-    skill_dir: Option<String>,
-
-    /// Skip loading external skills
-    #[arg(long)]
-    no_skills: bool,
-
     // ── LLM Analysis ────────────────────────────────────────────────────
 
-    /// Skip LLM analysis, only output raw findings (classic behavior)
-    #[arg(long)]
-    no_analyze: bool,
-
-    /// LLM API key (prefer CLAW_GUARD_API_KEY env var to avoid process list exposure)
+    /// LLM provider API key for local analysis (e.g. Anthropic, OpenAI).
+    /// Not needed for install9 platform access — that uses auto-registration.
+    /// Prefer CLAW_GUARD_API_KEY env var to avoid process list exposure.
     #[arg(long, env = "CLAW_GUARD_API_KEY", hide_env_values = true)]
     api_key: Option<String>,
 
@@ -187,14 +162,10 @@ async fn main() -> Result<()> {
     let mut all_rules = engine::registry::all_rules();
     let builtin_count = all_rules.len();
 
-    // ── Load skills ─────────────────────────────────────────────────────
+    // ── Load skills from ~/.claw-guard/skills/ ────────────────────────
     let mut skills_loaded: usize = 0;
-    if !cli.no_skills {
-        let skill_dir = match &cli.skill_dir {
-            Some(d) => PathBuf::from(d),
-            None => default_skill_dir(),
-        };
-
+    {
+        let skill_dir = default_skill_dir();
         match engine::skill::load_skills(&skill_dir) {
             Ok(skill_rules) => {
                 skills_loaded = skill_rules.len();
@@ -253,19 +224,10 @@ async fn main() -> Result<()> {
     );
 
     // ── Evaluate rules ──────────────────────────────────────────────────
-    let category_filter = cli.category.as_deref().map(|c| c.to_lowercase());
-
     let mut all_findings = Vec::new();
     let mut rules_run = 0usize;
 
     for rule in &all_rules {
-        // Category filter
-        if let Some(ref filter) = category_filter {
-            let cat_str = format!("{:?}", rule.category()).to_lowercase();
-            if !cat_str.contains(filter) {
-                continue;
-            }
-        }
 
         rules_run += 1;
         info!("[{}] {}", rule.id(), rule.name());
@@ -290,7 +252,7 @@ async fn main() -> Result<()> {
 
     // ── Auto-register + get agent_id (unless --no-upload) ──────────────
     let agent_id = if !cli.no_upload {
-        match get_or_register_agent(&cli.api_url).await {
+        match get_or_register_agent(API_URL).await {
             Ok(id) => Some(id),
             Err(e) => {
                 error!("Agent registration failed: {}", e);
@@ -308,49 +270,59 @@ async fn main() -> Result<()> {
         report.skills_loaded = Some(skills_loaded);
     }
 
-    // ── Local LLM Analysis ──────────────────────────────────────────────
-    if !cli.no_analyze {
-        match run_local_analysis(&cli, &report).await {
-            Ok(Some(result)) => {
-                report.analysis = Some(result.analysis);
-                report.web_url = result.web_url;
+    // ── LLM Analysis ────────────────────────────────────────────────────
+    //
+    // Automatic mode selection:
+    //   - Has API key (or no-auth provider) → local LLM analysis
+    //   - No API key + upload enabled → server-side analysis during upload
+    //   - No API key + --no-upload → no analysis
+    //
+    let mut local_analysis_done = false;
+    match run_local_analysis(&cli, &report).await {
+        Ok(Some(result)) => {
+            report.analysis = Some(result.analysis);
+            report.web_url = result.web_url;
+            local_analysis_done = true;
+        }
+        Ok(None) => {
+            // No API key — will let server analyze during upload
+            if !cli.no_upload {
+                info!("No LLM API key configured — analysis will be performed by install9 server during upload");
             }
-            Ok(None) => {
-                // Analysis skipped (no API key, etc.)
-            }
-            Err(e) => {
-                error!("LLM analysis failed: {}", e);
-            }
+        }
+        Err(e) => {
+            error!("LLM analysis failed: {}", e);
         }
     }
 
-    // ── Output ──────────────────────────────────────────────────────────
-    if cli.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        report.print_terminal();
-    }
-
-    // Save to file
-    if let Some(ref path) = cli.output {
-        let json = serde_json::to_string_pretty(&report)?;
-        std::fs::write(path, &json)?;
-        info!("Report saved to {}", path);
-    }
-
-    // ── Upload report (server does async analysis) ──────────────────────
+    // ── Upload report ───────────────────────────────────────────────────
+    //
+    // If local analysis was skipped (no API key), ask the server to
+    // analyze during upload (analyze=true query param).
+    //
     if !cli.no_upload {
         if agent_id.is_some() {
-            let upload_url = format!("{}/reports", cli.api_url.trim_end_matches('/'));
+            let need_remote_analysis = !local_analysis_done;
+            let upload_url = format!("{}/reports", API_URL.trim_end_matches('/'));
             info!("Uploading report to {}...", upload_url);
-            match upload_report(&upload_url, &report).await {
+            match upload_report(&upload_url, &report, need_remote_analysis).await {
                 Ok(upload_resp) => {
+                    // If server returned analysis, merge it into the report
+                    if let Some(analysis) = upload_resp.analysis {
+                        report.analysis = Some(analysis);
+                    }
+                    if upload_resp.web_url.is_some() {
+                        report.web_url = upload_resp.web_url;
+                    }
                     println!("\n\u{2714} Report: https://install9.ai/reports/{}", upload_resp.report_id);
                 }
                 Err(e) => error!("Failed to upload report: {}", e),
             }
         }
     }
+
+    // ── Output ──────────────────────────────────────────────────────────
+    report.print_terminal();
 
     // ── Exit code ───────────────────────────────────────────────────────
     if report.summary.critical_findings > 0 {
@@ -428,13 +400,32 @@ async fn run_local_analysis(
 struct UploadResponse {
     report_id: String,
     #[serde(default)]
-    #[allow(dead_code)]
     web_url: Option<String>,
+    /// Server-side analysis result (returned when analyze=true)
+    #[serde(default)]
+    analysis: Option<llm::AnalysisReport>,
 }
 
-async fn upload_report(api_url: &str, report: &report::AuditReport) -> Result<UploadResponse> {
-    let client = reqwest::Client::new();
-    let resp = client.post(api_url).json(report).send().await?;
+async fn upload_report(
+    api_url: &str,
+    report: &report::AuditReport,
+    request_analysis: bool,
+) -> Result<UploadResponse> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(if request_analysis { 120 } else { 30 }))
+        .build()?;
+
+    let url = if request_analysis {
+        format!("{}?analyze=true", api_url)
+    } else {
+        api_url.to_string()
+    };
+
+    if request_analysis {
+        info!("Requesting server-side analysis (no local API key)...");
+    }
+
+    let resp = client.post(&url).json(report).send().await?;
     if resp.status().is_success() {
         let upload_resp: UploadResponse = resp.json().await
             .context("Failed to parse upload response")?;

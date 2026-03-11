@@ -2,7 +2,6 @@ pub mod adapter;
 pub mod local;
 pub mod prompt;
 pub mod providers;
-pub mod remote;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

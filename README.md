@@ -25,31 +25,26 @@ curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-g
 tar xzf claw-guard-v0.3.0-darwin-arm64.tar.gz
 chmod +x claw-guard
 
-# Full audit (classic mode, no LLM)
-./claw-guard --no-upload --no-analyze
+# Run audit (auto-uploads to install9, server does AI analysis)
+./claw-guard
 
-# AI-powered audit (Anthropic)
+# AI-powered audit with your own API key (local analysis)
 export CLAW_GUARD_API_KEY=sk-ant-xxx
+./claw-guard
+
+# Use other LLM providers
+./claw-guard --provider openai --model gpt-4o
+./claw-guard --provider ollama --model llama3
+./claw-guard --provider deepseek --model deepseek-chat
+
+# Fully offline (no upload, no remote analysis)
 ./claw-guard --no-upload
-
-# AI-powered audit (OpenAI / Ollama / 24 providers)
-./claw-guard --no-upload --provider openai --model gpt-4o
-./claw-guard --no-upload --provider ollama --model llama3
-./claw-guard --no-upload --provider deepseek --model deepseek-chat
-
-# Filter by category
-./claw-guard --no-upload --no-analyze --category cost
-./claw-guard --no-upload --no-analyze --category destructive
 
 # List all supported LLM providers
 ./claw-guard --list-providers
 
 # List all rules + skills
 ./claw-guard --list-rules
-
-# JSON output / save report
-./claw-guard --no-upload --no-analyze --json
-./claw-guard --no-upload --no-analyze --output report.json
 ```
 
 ## Example Output
@@ -114,7 +109,7 @@ claw-guard uses LLM to go beyond pass/fail — it identifies **attack chains** (
 | Mode | How | Best For |
 |------|-----|----------|
 | **Local** (default) | Your own API key, analysis runs on your machine | Privacy-first, air-gapped environments |
-| **Remote** | Sends findings to install9 platform for analysis | Continuous monitoring, historical trends |
+| **Remote** (automatic fallback) | No API key configured — findings are analyzed by install9 platform during upload | Zero-config, continuous monitoring |
 
 ### Supported Providers (24)
 
@@ -150,21 +145,18 @@ Use `--list-providers` to see all providers with their default models and base U
 Custom OpenAI-compatible endpoints are supported via `--base-url`:
 
 ```sh
-# Local with Anthropic (default)
+# With Anthropic API key (default provider)
 export CLAW_GUARD_API_KEY=sk-ant-xxx
-claw-guard --no-upload
+claw-guard
 
-# Local with Ollama (fully offline)
+# With Ollama (fully offline, no auth needed)
 claw-guard --no-upload --provider ollama --model llama3
 
 # Custom endpoint
-claw-guard --no-upload --provider openai --base-url http://my-proxy:8080
+claw-guard --provider openai --base-url http://my-proxy:8080
 
-# Remote mode (sends to install9 platform)
-claw-guard --mode remote --platform-id my-server-id
-
-# Skip AI analysis entirely
-claw-guard --no-upload --no-analyze
+# No API key? Just run — server analyzes during upload automatically
+claw-guard
 ```
 
 ## Scoring Model
@@ -204,13 +196,14 @@ Skills are community-contributed security checks in Markdown format. Each skill 
 
 ### Using Skills
 
-```sh
-# Load from a directory
-claw-guard --no-upload --no-analyze --skill-dir ./my-skills
+Drop `.md` files into `~/.claw-guard/skills/` — they are automatically loaded on every run.
 
-# Default directory: ~/.claw-guard/skills/
-# Skip all skills
-claw-guard --no-upload --no-analyze --no-skills
+```
+~/.claw-guard/skills/
+├── check-npm-audit.md
+├── check-git-secrets.md
+└── my-custom-check/
+    └── SKILL.md
 ```
 
 ### Writing a Skill
@@ -263,15 +256,6 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 
 **Security:** Skill commands run with sensitive environment variables stripped (AWS keys, API tokens, etc.) and enforce a timeout. Only install skills you trust.
 
-### Skill Directory Layout
-
-```
-~/.claw-guard/skills/
-├── check-npm-audit.md          # Flat .md file
-├── check-git-secrets.md
-└── my-custom-check/
-    └── SKILL.md                # Or subdirectory with SKILL.md
-```
 
 ## Detection Rules
 
@@ -385,8 +369,7 @@ src/
 │   ├── providers.rs     # Provider registry (24 providers)
 │   ├── adapter.rs       # Protocol adapters (OpenAI-compat, Anthropic)
 │   ├── prompt.rs        # Findings → LLM prompt builder
-│   ├── local.rs         # Local mode (multi-provider API calls + spinner)
-│   └── remote.rs        # Remote mode (install9 platform)
+│   └── local.rs         # Local mode (multi-provider API calls + spinner)
 ├── rules/
 │   ├── credential/      # CG-C001 ~ CG-C003
 │   ├── filesystem/      # CG-F001 ~ CG-F003
@@ -400,7 +383,7 @@ src/
 │   ├── cost/            # CG-M001 ~ CG-M003
 │   └── destructive/     # CG-X001 ~ CG-X004
 └── report/
-    └── mod.rs           # Report generation, weighted scoring, terminal/JSON output
+    └── mod.rs           # Report generation, weighted scoring, terminal output
 ```
 
 ### Adding a Built-in Rule
@@ -412,7 +395,7 @@ src/
 ### Adding a Skill (No Rust Required)
 
 1. Create a `.md` file with frontmatter + `## Evaluate` bash block
-2. Drop it in `~/.claw-guard/skills/` or pass `--skill-dir`
+2. Drop it in `~/.claw-guard/skills/`
 
 ## Data Privacy
 
@@ -436,23 +419,12 @@ claw-guard collects only structured metadata. It **never uploads** file contents
 
 ```
 Options:
-    --platform-id <ID>       Platform ID for report upload
-    --json                   JSON output
-    --output <PATH>          Save report to file
-    --category <NAME>        Only run rules in this category
+    --no-upload              Fully offline mode (skip registration, upload, and server analysis)
     --list-rules             List all detection rules
     --list-providers         List all supported LLM providers
-    --no-upload              Skip upload to platform
-    --api-url <URL>          API base URL [default: https://install9.ai/api/v1/claw-guard]
-
-  Skills:
-    --skill-dir <PATH>       Skill directory [default: ~/.claw-guard/skills/]
-    --no-skills              Skip loading skills
 
   AI Analysis:
-    --mode <local|remote>    Analysis mode [default: local]
-    --no-analyze             Skip LLM analysis (classic mode)
-    --api-key <KEY>          LLM API key (or set CLAW_GUARD_API_KEY)
+    --api-key <KEY>          LLM provider API key for local analysis (or set CLAW_GUARD_API_KEY)
     --provider <NAME>        LLM provider name [default: anthropic]
     --model <MODEL>          LLM model name (overrides provider default)
     --base-url <URL>         Custom base URL for any OpenAI-compatible endpoint

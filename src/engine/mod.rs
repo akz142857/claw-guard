@@ -73,6 +73,7 @@ pub enum Category {
     Skill,
 }
 
+
 impl fmt::Display for Category {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

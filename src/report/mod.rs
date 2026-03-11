@@ -10,7 +10,7 @@ pub struct AuditReport {
     pub hostname: String,
     pub os: String,
     pub arch: String,
-    pub platform_id: Option<String>,
+    pub agent_id: Option<String>,
     pub summary: ReportSummary,
     pub categories: Vec<CategorySummary>,
     pub findings: Vec<Finding>,
@@ -46,7 +46,7 @@ pub struct CategorySummary {
 }
 
 impl AuditReport {
-    pub fn new(findings: Vec<Finding>, total_rules: usize, platform_id: Option<String>) -> Self {
+    pub fn new(findings: Vec<Finding>, total_rules: usize, agent_id: Option<String>) -> Self {
         let total_findings = findings.len();
         let pass = findings.iter().filter(|f| f.status == Status::Pass).count();
         let fail = findings.iter().filter(|f| f.status == Status::Fail).count();
@@ -119,7 +119,7 @@ impl AuditReport {
             hostname,
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
-            platform_id,
+            agent_id,
             summary: ReportSummary {
                 total_rules,
                 total_findings,

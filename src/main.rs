@@ -4,8 +4,9 @@ mod platform;
 mod report;
 mod rules;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
 
@@ -14,10 +15,6 @@ use tracing::{error, info, warn};
 #[command(about = "AI Agent host system security audit tool")]
 #[command(version)]
 struct Cli {
-    /// Platform ID for report upload
-    #[arg(long)]
-    platform_id: Option<String>,
-
     /// Output report as JSON to stdout
     #[arg(long)]
     json: bool,
@@ -27,10 +24,10 @@ struct Cli {
     output: Option<String>,
 
     /// API base URL for the install9 platform
-    #[arg(long, default_value = "https://install9.ai/api/v1/claw-guard")]
+    #[arg(long, default_value = "https://install9.ai/api/claw-guard")]
     api_url: String,
 
-    /// Skip uploading report to platform
+    /// Skip uploading report to platform (pure local mode, no registration)
     #[arg(long)]
     no_upload: bool,
 
@@ -53,10 +50,6 @@ struct Cli {
     no_skills: bool,
 
     // ── LLM Analysis ────────────────────────────────────────────────────
-
-    /// Analysis mode: local (use your own API key) or remote (send to install9 platform)
-    #[arg(long, value_enum, default_value_t = Mode::Local)]
-    mode: Mode,
 
     /// Skip LLM analysis, only output raw findings (classic behavior)
     #[arg(long)]
@@ -86,10 +79,95 @@ struct Cli {
     list_providers: bool,
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
-enum Mode {
-    Local,
-    Remote,
+// ── Agent registration ──────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentConfig {
+    agent_id: String,
+    api_url: String,
+}
+
+/// Returns the path to ~/.claw-guard/agent.json
+fn agent_config_path() -> PathBuf {
+    platform::home_dir().join(".claw-guard").join("agent.json")
+}
+
+/// Auto-register with the backend, caching agent_id locally.
+///
+/// - If `~/.claw-guard/agent.json` exists and its `api_url` matches, returns the saved agent_id.
+/// - Otherwise, calls `POST {api_url}/register` and saves the response.
+async fn get_or_register_agent(api_url: &str) -> Result<String> {
+    let config_path = agent_config_path();
+
+    // Try to read existing config
+    if config_path.exists() {
+        let data = std::fs::read_to_string(&config_path)
+            .context("Failed to read agent.json")?;
+        if let Ok(config) = serde_json::from_str::<AgentConfig>(&data) {
+            if config.api_url == api_url {
+                info!("Using cached agent_id: {}", config.agent_id);
+                return Ok(config.agent_id);
+            }
+            info!("API URL changed, re-registering agent");
+        }
+    }
+
+    // Register with backend
+    let hostname = gethostname::gethostname().to_string_lossy().to_string();
+    let register_url = format!("{}/register", api_url.trim_end_matches('/'));
+    info!("Registering agent at {}...", register_url);
+
+    #[derive(Serialize)]
+    struct RegisterRequest {
+        hostname: String,
+        os: String,
+        arch: String,
+        version: String,
+    }
+
+    #[derive(Deserialize)]
+    struct RegisterResponse {
+        agent_id: String,
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&register_url)
+        .json(&RegisterRequest {
+            hostname,
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+        .send()
+        .await
+        .context("Failed to connect to registration endpoint")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Registration failed ({}): {}", status, text);
+    }
+
+    let reg_resp: RegisterResponse = resp.json().await
+        .context("Failed to parse registration response")?;
+
+    // Save to disk
+    let config = AgentConfig {
+        agent_id: reg_resp.agent_id.clone(),
+        api_url: api_url.to_string(),
+    };
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .context("Failed to create ~/.claw-guard directory")?;
+    }
+    let json = serde_json::to_string_pretty(&config)?;
+    std::fs::write(&config_path, &json)
+        .context("Failed to write agent.json")?;
+
+    info!("Agent registered: {}", config.agent_id);
+    Ok(config.agent_id)
 }
 
 #[tokio::main]
@@ -210,16 +288,29 @@ async fn main() -> Result<()> {
         }
     }
 
+    // ── Auto-register + get agent_id (unless --no-upload) ──────────────
+    let agent_id = if !cli.no_upload {
+        match get_or_register_agent(&cli.api_url).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                error!("Agent registration failed: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // ── Build report ────────────────────────────────────────────────────
-    let mut report = report::AuditReport::new(all_findings, rules_run, cli.platform_id.clone());
+    let mut report = report::AuditReport::new(all_findings, rules_run, agent_id.clone());
 
     if skills_loaded > 0 {
         report.skills_loaded = Some(skills_loaded);
     }
 
-    // ── LLM Analysis ────────────────────────────────────────────────────
+    // ── Local LLM Analysis ──────────────────────────────────────────────
     if !cli.no_analyze {
-        match run_analysis(&cli, &report).await {
+        match run_local_analysis(&cli, &report).await {
             Ok(Some(result)) => {
                 report.analysis = Some(result.analysis);
                 report.web_url = result.web_url;
@@ -247,13 +338,15 @@ async fn main() -> Result<()> {
         info!("Report saved to {}", path);
     }
 
-    // Upload (raw report, separate from analysis)
+    // ── Upload report (server does async analysis) ──────────────────────
     if !cli.no_upload {
-        if let Some(ref _pid) = cli.platform_id {
+        if agent_id.is_some() {
             let upload_url = format!("{}/reports", cli.api_url.trim_end_matches('/'));
             info!("Uploading report to {}...", upload_url);
             match upload_report(&upload_url, &report).await {
-                Ok(_) => info!("Report uploaded successfully"),
+                Ok(upload_resp) => {
+                    println!("\n\u{2714} Report: https://install9.ai/reports/{}", upload_resp.report_id);
+                }
                 Err(e) => error!("Failed to upload report: {}", e),
             }
         }
@@ -269,96 +362,83 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Run LLM analysis based on mode (local or remote).
-/// Returns (AnalysisReport, Option<web_url>).
-async fn run_analysis(
+/// Run local LLM analysis if an API key / provider is configured.
+async fn run_local_analysis(
     cli: &Cli,
     report: &report::AuditReport,
 ) -> Result<Option<llm::AnalysisResult>> {
     use llm::Analyzer;
 
-    match cli.mode {
-        Mode::Local => {
-            let api_key = match &cli.api_key {
-                Some(k) if !k.is_empty() => k.clone(),
-                _ => {
-                    // Allow empty key for providers that don't require auth (ollama, vllm, etc.)
-                    let provider = llm::providers::find_provider(&cli.provider);
-                    let needs_key = provider
-                        .map(|p| p.auth_type != llm::providers::AuthType::None)
-                        .unwrap_or(true);
-                    if needs_key {
-                        info!("No API key provided, skipping LLM analysis. Use --api-key or set CLAW_GUARD_API_KEY");
-                        return Ok(None);
-                    }
-                    String::new()
-                }
-            };
-
-            let config = match llm::providers::find_provider(&cli.provider) {
-                Some(provider_config) => llm::adapter::ResolvedConfig::from_provider(
-                    provider_config,
-                    api_key,
-                    cli.model.clone(),
-                    cli.base_url.clone(),
-                ),
-                None => {
-                    // Unknown provider — require --base-url, assume OpenAI-compatible
-                    let base_url = match &cli.base_url {
-                        Some(url) => url.clone(),
-                        None => {
-                            let known: Vec<_> = llm::providers::all_providers()
-                                .iter()
-                                .map(|p| p.name)
-                                .collect();
-                            error!(
-                                "Unknown provider '{}'. Known providers: {}. Or use --base-url for custom endpoints.",
-                                cli.provider,
-                                known.join(", ")
-                            );
-                            return Ok(None);
-                        }
-                    };
-                    let model = cli.model.clone().unwrap_or_else(|| "default".to_string());
-                    llm::adapter::ResolvedConfig::custom(
-                        cli.provider.clone(),
-                        base_url,
-                        api_key,
-                        model,
-                    )
-                }
-            };
-
-            let analyzer = llm::local::LocalAnalyzer { config };
-            let result = analyzer.analyze(report).await?;
-            Ok(Some(result))
+    let api_key = match &cli.api_key {
+        Some(k) if !k.is_empty() => k.clone(),
+        _ => {
+            // Allow empty key for providers that don't require auth (ollama, vllm, etc.)
+            let provider = llm::providers::find_provider(&cli.provider);
+            let needs_key = provider
+                .map(|p| p.auth_type != llm::providers::AuthType::None)
+                .unwrap_or(true);
+            if needs_key {
+                info!("No API key provided, skipping local LLM analysis. Use --api-key or set CLAW_GUARD_API_KEY");
+                return Ok(None);
+            }
+            String::new()
         }
+    };
 
-        Mode::Remote => {
-            let platform_id = match &cli.platform_id {
-                Some(id) => id.clone(),
+    let config = match llm::providers::find_provider(&cli.provider) {
+        Some(provider_config) => llm::adapter::ResolvedConfig::from_provider(
+            provider_config,
+            api_key,
+            cli.model.clone(),
+            cli.base_url.clone(),
+        ),
+        None => {
+            // Unknown provider — require --base-url, assume OpenAI-compatible
+            let base_url = match &cli.base_url {
+                Some(url) => url.clone(),
                 None => {
-                    info!("Remote mode requires --platform-id, skipping analysis");
+                    let known: Vec<_> = llm::providers::all_providers()
+                        .iter()
+                        .map(|p| p.name)
+                        .collect();
+                    error!(
+                        "Unknown provider '{}'. Known providers: {}. Or use --base-url for custom endpoints.",
+                        cli.provider,
+                        known.join(", ")
+                    );
                     return Ok(None);
                 }
             };
-
-            let analyzer = llm::remote::RemoteAnalyzer {
-                api_url: cli.api_url.clone(),
-                platform_id,
-            };
-
-            let result = analyzer.analyze(report).await?;
-            Ok(Some(result))
+            let model = cli.model.clone().unwrap_or_else(|| "default".to_string());
+            llm::adapter::ResolvedConfig::custom(
+                cli.provider.clone(),
+                base_url,
+                api_key,
+                model,
+            )
         }
-    }
+    };
+
+    let analyzer = llm::local::LocalAnalyzer { config };
+    let result = analyzer.analyze(report).await?;
+    Ok(Some(result))
 }
 
-async fn upload_report(api_url: &str, report: &report::AuditReport) -> Result<()> {
+#[derive(Debug, Deserialize)]
+struct UploadResponse {
+    report_id: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    web_url: Option<String>,
+}
+
+async fn upload_report(api_url: &str, report: &report::AuditReport) -> Result<UploadResponse> {
     let client = reqwest::Client::new();
     let resp = client.post(api_url).json(report).send().await?;
     if resp.status().is_success() {
-        Ok(())
+        let upload_resp: UploadResponse = resp.json().await
+            .context("Failed to parse upload response")?;
+        Ok(upload_resp)
     } else {
         anyhow::bail!("Upload failed with status: {}", resp.status());
     }

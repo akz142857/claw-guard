@@ -20,8 +20,11 @@
 ## Quick Start
 
 ```sh
-# One-line install (macOS / Linux, auto-detects platform)
+# One-line install (macOS / Linux)
 curl -fsSL install9.ai/claw-guard | sh
+
+# Windows (PowerShell)
+# irm https://install9.ai/claw-guard-win | iex
 
 # Run audit (auto-uploads to install9, server does AI analysis)
 claw-guard

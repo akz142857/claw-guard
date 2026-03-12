@@ -20,8 +20,11 @@
 ## 快速开始
 
 ```sh
-# 一键安装（macOS / Linux，自动检测平台）
+# 一键安装（macOS / Linux）
 curl -fsSL install9.ai/claw-guard | sh
+
+# Windows (PowerShell)
+# irm https://install9.ai/claw-guard-win | iex
 
 # 运行审计（自动上传到 install9，服务端做 AI 分析）
 claw-guard

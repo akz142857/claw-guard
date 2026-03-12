@@ -300,7 +300,10 @@ impl AuditReport {
             println!("  All checks passed.");
         }
 
-        // Web URL
+        // Agent ID & Web URL
+        if let Some(ref id) = self.agent_id {
+            println!("  Agent ID:   {}", id);
+        }
         if let Some(ref url) = self.web_url {
             println!("  Web report: {}", url);
         }

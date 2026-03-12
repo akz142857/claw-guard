@@ -360,6 +360,11 @@ async fn main() -> Result<()> {
     // ── Output ──────────────────────────────────────────────────────────
     report.print_terminal();
 
+    // ── Auto-open web report in browser ──────────────────────────────
+    if let Some(ref url) = report.web_url {
+        open_browser(url);
+    }
+
     // ── Version check notice ─────────────────────────────────────────
     if let Ok(Some(latest)) = version_check.await {
         eprintln!(
@@ -484,6 +489,21 @@ async fn upload_report(
 /// Default skill directory: ~/.claw-guard/skills/
 fn default_skill_dir() -> PathBuf {
     platform::home_dir().join(".claw-guard").join("skills")
+}
+
+// ── Open browser ────────────────────────────────────────────────────────
+
+fn open_browser(url: &str) {
+    let result = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).spawn()
+    } else if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd").args(["/C", "start", url]).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    };
+    if let Err(e) = result {
+        info!("Could not open browser: {}", e);
+    }
 }
 
 // ── Background version check ────────────────────────────────────────────

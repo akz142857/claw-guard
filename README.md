@@ -57,7 +57,7 @@ export CLAW_GUARD_API_KEY=sk-ant-xxx
 ## Example Output
 
 ```
-  claw-guard v0.4.0 — my-server  (linux)
+  claw-guard v0.5.0 — my-server  (linux)
   2026-03-10T17:00:00+00:00
 
   ── Category Breakdown ──
@@ -363,6 +363,7 @@ echo '{"status":"pass","detail":"No vulnerabilities found"}'
 ```
 src/
 ├── main.rs              # CLI entry point, orchestration
+├── gui.rs               # Native GUI (eframe/egui), Apple-style dark theme
 ├── platform.rs          # Cross-platform path abstraction (macOS/Linux/Windows)
 ├── engine/
 │   ├── mod.rs           # Rule/StaticRule traits, Finding, Severity, Category
@@ -474,11 +475,11 @@ docker run --rm -v "$(pwd)":/app -w /app rust:latest bash -c \
 
 | File | Platform |
 |------|----------|
-| claw-guard-v0.4.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
-| claw-guard-v0.4.0-darwin-amd64.tar.gz | macOS Intel |
-| claw-guard-v0.4.0-linux-amd64.tar.gz | Linux x86_64 |
-| claw-guard-v0.4.0-linux-arm64.tar.gz | Linux ARM64 |
-| claw-guard-v0.4.0-windows-amd64.zip | Windows x86_64 |
+| claw-guard-v0.5.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
+| claw-guard-v0.5.0-darwin-amd64.tar.gz | macOS Intel |
+| claw-guard-v0.5.0-linux-amd64.tar.gz | Linux x86_64 |
+| claw-guard-v0.5.0-linux-arm64.tar.gz | Linux ARM64 |
+| claw-guard-v0.5.0-windows-amd64.zip | Windows x86_64 |
 
 Download from [GitHub Releases](https://github.com/akz142857/claw-guard/releases).
 

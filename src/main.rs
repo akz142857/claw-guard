@@ -1,4 +1,5 @@
 mod engine;
+mod gui;
 mod llm;
 mod platform;
 mod report;
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
 
-const API_URL: &str = "https://install9.ai/api/claw-guard";
+pub const API_URL: &str = "https://install9.ai/api/claw-guard";
 const GITHUB_REPO: &str = "akz142857/claw-guard";
 
 #[derive(Deserialize)]
@@ -89,7 +90,7 @@ fn agent_config_path() -> PathBuf {
 ///
 /// - If `~/.claw-guard/agent.json` exists and its `api_url` matches, returns the saved agent_id.
 /// - Otherwise, calls `POST {api_url}/register` and saves the response.
-async fn get_or_register_agent(api_url: &str) -> Result<String> {
+pub async fn get_or_register_agent(api_url: &str) -> Result<String> {
     let config_path = agent_config_path();
 
     // Try to read existing config
@@ -165,6 +166,17 @@ async fn get_or_register_agent(api_url: &str) -> Result<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // If no CLI arguments provided (e.g. double-click on Windows/macOS), launch GUI
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() <= 1 {
+        // No arguments — launch GUI mode
+        if let Err(e) = gui::run_gui() {
+            eprintln!("GUI error: {}", e);
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -479,16 +491,16 @@ async fn run_local_analysis(
 }
 
 #[derive(Debug, Deserialize)]
-struct UploadResponse {
-    report_id: String,
+pub struct UploadResponse {
+    pub report_id: String,
     #[serde(default)]
-    web_url: Option<String>,
+    pub web_url: Option<String>,
     /// Server-side analysis result (returned when analyze=true)
     #[serde(default)]
-    analysis: Option<llm::AnalysisReport>,
+    pub analysis: Option<llm::AnalysisReport>,
 }
 
-async fn upload_report(
+pub async fn upload_report(
     api_url: &str,
     report: &report::AuditReport,
     request_analysis: bool,

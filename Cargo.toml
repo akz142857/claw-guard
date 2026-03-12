@@ -1,6 +1,6 @@
 [package]
 name = "claw-guard"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "AI Agent host system security audit tool"
 license = "MIT"
@@ -19,6 +19,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sysinfo = "0.33"
 gethostname = "1.0"
 semver = "1.0.27"
+eframe = "0.31"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["user", "process", "net"] }

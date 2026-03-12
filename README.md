@@ -21,8 +21,8 @@
 
 ```sh
 # Download binary (example: macOS Apple Silicon)
-curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.3.0-darwin-arm64.tar.gz
-tar xzf claw-guard-v0.3.0-darwin-arm64.tar.gz
+curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.4.0-darwin-arm64.tar.gz
+tar xzf claw-guard-v0.4.0-darwin-arm64.tar.gz
 chmod +x claw-guard
 
 # Run audit (auto-uploads to install9, server does AI analysis)
@@ -45,12 +45,18 @@ export CLAW_GUARD_API_KEY=sk-ant-xxx
 
 # List all rules + skills
 ./claw-guard --list-rules
+
+# Upgrade to latest version
+./claw-guard --upgrade
+
+# Remove all local data (~/.claw-guard/)
+./claw-guard --purge-data
 ```
 
 ## Example Output
 
 ```
-  claw-guard v0.3.0 — my-server  (linux)
+  claw-guard v0.4.0 — my-server  (linux)
   2026-03-10T17:00:00+00:00
 
   ── Category Breakdown ──
@@ -422,6 +428,8 @@ Options:
     --no-upload              Fully offline mode (skip registration, upload, and server analysis)
     --list-rules             List all detection rules
     --list-providers         List all supported LLM providers
+    --upgrade                Check for updates and upgrade to the latest version
+    --purge-data             Remove all claw-guard data (~/.claw-guard/) and exit
 
   AI Analysis:
     --api-key <KEY>          LLM provider API key for local analysis (or set CLAW_GUARD_API_KEY)
@@ -465,11 +473,11 @@ docker run --rm -v "$(pwd)":/app -w /app rust:latest bash -c \
 
 | File | Platform |
 |------|----------|
-| claw-guard-v0.3.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
-| claw-guard-v0.3.0-darwin-amd64.tar.gz | macOS Intel |
-| claw-guard-v0.3.0-linux-amd64.tar.gz | Linux x86_64 |
-| claw-guard-v0.3.0-linux-arm64.tar.gz | Linux ARM64 |
-| claw-guard-v0.3.0-windows-amd64.zip | Windows x86_64 |
+| claw-guard-v0.4.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
+| claw-guard-v0.4.0-darwin-amd64.tar.gz | macOS Intel |
+| claw-guard-v0.4.0-linux-amd64.tar.gz | Linux x86_64 |
+| claw-guard-v0.4.0-linux-arm64.tar.gz | Linux ARM64 |
+| claw-guard-v0.4.0-windows-amd64.zip | Windows x86_64 |
 
 Download from [GitHub Releases](https://github.com/akz142857/claw-guard/releases).
 

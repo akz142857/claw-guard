@@ -21,8 +21,8 @@
 
 ```sh
 # 下载二进制文件（示例：macOS Apple Silicon）
-curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.3.0-darwin-arm64.tar.gz
-tar xzf claw-guard-v0.3.0-darwin-arm64.tar.gz
+curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.4.0-darwin-arm64.tar.gz
+tar xzf claw-guard-v0.4.0-darwin-arm64.tar.gz
 chmod +x claw-guard
 
 # 运行审计（自动上传到 install9，服务端做 AI 分析）
@@ -45,12 +45,18 @@ export CLAW_GUARD_API_KEY=sk-ant-xxx
 
 # 列出所有规则 + Skill
 ./claw-guard --list-rules
+
+# 升级到最新版本
+./claw-guard --upgrade
+
+# 清除本地数据（~/.claw-guard/）
+./claw-guard --purge-data
 ```
 
 ## 示例输出
 
 ```
-  claw-guard v0.3.0 — my-server  (linux)
+  claw-guard v0.4.0 — my-server  (linux)
   2026-03-10T17:00:00+00:00
 
   ── Category Breakdown ──
@@ -422,6 +428,8 @@ Options:
     --no-upload              完全离线模式（跳过注册、上传、服务端分析）
     --list-rules             列出所有检测规则
     --list-providers         列出所有支持的 LLM 提供商
+    --upgrade                检查更新并升级到最新版本
+    --purge-data             删除所有 claw-guard 本地数据（~/.claw-guard/）
 
   AI 分析:
     --api-key <KEY>          LLM 提供商 API Key，用于本地分析（或设置 CLAW_GUARD_API_KEY 环境变量）
@@ -465,11 +473,11 @@ docker run --rm -v "$(pwd)":/app -w /app rust:latest bash -c \
 
 | 文件 | 平台 |
 |------|------|
-| claw-guard-v0.3.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
-| claw-guard-v0.3.0-darwin-amd64.tar.gz | macOS Intel |
-| claw-guard-v0.3.0-linux-amd64.tar.gz | Linux x86_64 |
-| claw-guard-v0.3.0-linux-arm64.tar.gz | Linux ARM64 |
-| claw-guard-v0.3.0-windows-amd64.zip | Windows x86_64 |
+| claw-guard-v0.4.0-darwin-arm64.tar.gz | macOS Apple Silicon (M1/M2/M3/M4) |
+| claw-guard-v0.4.0-darwin-amd64.tar.gz | macOS Intel |
+| claw-guard-v0.4.0-linux-amd64.tar.gz | Linux x86_64 |
+| claw-guard-v0.4.0-linux-arm64.tar.gz | Linux ARM64 |
+| claw-guard-v0.4.0-windows-amd64.zip | Windows x86_64 |
 
 从 [GitHub Releases](https://github.com/akz142857/claw-guard/releases) 下载。
 

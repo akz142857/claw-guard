@@ -36,6 +36,10 @@ struct Cli {
     #[arg(long)]
     purge_data: bool,
 
+    /// Uninstall claw-guard completely (remove data + binary) and exit
+    #[arg(long)]
+    uninstall: bool,
+
     /// Check for updates and upgrade to the latest version
     #[arg(long)]
     upgrade: bool,
@@ -183,6 +187,33 @@ async fn main() -> Result<()> {
             println!("Nothing to remove ({}/ does not exist)", data_dir.display());
         }
         println!("Data purged. To fully uninstall, also delete the binary.");
+        return Ok(());
+    }
+
+    // ── --uninstall ─────────────────────────────────────────────────────
+    if cli.uninstall {
+        let data_dir = platform::home_dir().join(".claw-guard");
+        if data_dir.exists() {
+            std::fs::remove_dir_all(&data_dir)
+                .context("Failed to remove ~/.claw-guard")?;
+            println!("\u{2714} Removed {}", data_dir.display());
+        }
+
+        let exe = std::env::current_exe()
+            .context("Failed to determine current executable path")?;
+        // On some OS the running binary can't delete itself directly;
+        // spawn a background process to remove it after we exit.
+        if cfg!(target_os = "windows") {
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "ping", "127.0.0.1", "-n", "2", ">nul", "&", "del", "/f"])
+                .arg(&exe)
+                .spawn();
+        } else {
+            let _ = std::process::Command::new("sh")
+                .args(["-c", &format!("sleep 1 && rm -f '{}'", exe.display())])
+                .spawn();
+        }
+        println!("\u{2714} claw-guard has been uninstalled.");
         return Ok(());
     }
 

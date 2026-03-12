@@ -11,6 +11,12 @@ use std::path::PathBuf;
 use tracing::{error, info, warn};
 
 const API_URL: &str = "https://install9.ai/api/claw-guard";
+const GITHUB_REPO: &str = "akz142857/claw-guard";
+
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "claw-guard")]
@@ -25,6 +31,14 @@ struct Cli {
     /// List all detection rules and exit
     #[arg(long)]
     list_rules: bool,
+
+    /// Remove all claw-guard data (~/.claw-guard/) and exit
+    #[arg(long)]
+    purge_data: bool,
+
+    /// Check for updates and upgrade to the latest version
+    #[arg(long)]
+    upgrade: bool,
 
     // ── LLM Analysis ────────────────────────────────────────────────────
 
@@ -157,6 +171,28 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // ── --purge-data ──────────────────────────────────────────────────
+    if cli.purge_data {
+        let data_dir = platform::home_dir().join(".claw-guard");
+        if data_dir.exists() {
+            std::fs::remove_dir_all(&data_dir)
+                .context("Failed to remove ~/.claw-guard")?;
+            println!("\u{2714} Removed {}", data_dir.display());
+        } else {
+            println!("Nothing to remove ({}/ does not exist)", data_dir.display());
+        }
+        println!("Data purged. To fully uninstall, also delete the binary.");
+        return Ok(());
+    }
+
+    // ── --upgrade ──────────────────────────────────────────────────────
+    if cli.upgrade {
+        return self_upgrade().await;
+    }
+
+    // ── Background version check (non-blocking, once per day) ─────────
+    let version_check = tokio::spawn(check_latest_version());
 
     // ── Load built-in rules ─────────────────────────────────────────────
     let mut all_rules = engine::registry::all_rules();
@@ -324,6 +360,16 @@ async fn main() -> Result<()> {
     // ── Output ──────────────────────────────────────────────────────────
     report.print_terminal();
 
+    // ── Version check notice ─────────────────────────────────────────
+    if let Ok(Some(latest)) = version_check.await {
+        eprintln!(
+            "\n\u{26A0}  New version available: v{} (current: v{})",
+            latest,
+            env!("CARGO_PKG_VERSION")
+        );
+        eprintln!("   Run: claw-guard --upgrade");
+    }
+
     // ── Exit code ───────────────────────────────────────────────────────
     if report.summary.critical_findings > 0 {
         std::process::exit(2);
@@ -438,4 +484,304 @@ async fn upload_report(
 /// Default skill directory: ~/.claw-guard/skills/
 fn default_skill_dir() -> PathBuf {
     platform::home_dir().join(".claw-guard").join("skills")
+}
+
+// ── Background version check ────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+struct VersionCache {
+    latest_version: String,
+    checked_at: i64, // unix timestamp
+}
+
+fn version_cache_path() -> PathBuf {
+    platform::home_dir().join(".claw-guard").join("version-check.json")
+}
+
+/// Non-blocking version check with daily cache.
+/// Returns `Some(latest)` if a newer version is available, `None` otherwise.
+/// Silently returns `None` on any error (network, parsing, etc.).
+async fn check_latest_version() -> Option<String> {
+    let current = semver::Version::parse(env!("CARGO_PKG_VERSION")).ok()?;
+    let cache_path = version_cache_path();
+    let now = chrono::Utc::now().timestamp();
+
+    // Check cache first (valid for 24 hours)
+    if cache_path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&cache_path) {
+            if let Ok(cache) = serde_json::from_str::<VersionCache>(&data) {
+                if now - cache.checked_at < 86400 {
+                    if let Ok(cached) = semver::Version::parse(&cache.latest_version) {
+                        if cached > current {
+                            return Some(cache.latest_version);
+                        }
+                    }
+                    return None;
+                }
+            }
+        }
+    }
+
+    // Query GitHub API (5-second timeout to avoid blocking)
+    let client = reqwest::Client::builder()
+        .user_agent(format!("claw-guard/{}", current))
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let resp = client.get(&api_url).send().await.ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let release: GithubRelease = resp.json().await.ok()?;
+    let latest = release.tag_name.trim_start_matches('v').to_string();
+
+    // Update cache
+    let cache = VersionCache {
+        latest_version: latest.clone(),
+        checked_at: now,
+    };
+    if let Some(parent) = cache_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string(&cache) {
+        let _ = std::fs::write(&cache_path, json);
+    }
+
+    let latest_ver = semver::Version::parse(&latest).ok()?;
+    if latest_ver > current {
+        Some(latest)
+    } else {
+        None
+    }
+}
+
+// ── Self-upgrade ────────────────────────────────────────────────────────
+
+/// Map Rust target triples to release asset names.
+fn release_asset_name(version: &str) -> Option<String> {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        "linux" => "linux",
+        "windows" => "windows",
+        _ => return None,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "amd64",
+        _ => return None,
+    };
+    let ext = if std::env::consts::OS == "windows" { "zip" } else { "tar.gz" };
+    Some(format!("claw-guard-{}-{}-{}.{}", version, os, arch, ext))
+}
+
+/// Clean up the temporary upgrade directory, ignoring errors.
+fn cleanup_tmp_dir(tmp_dir: &std::path::Path) {
+    let _ = std::fs::remove_dir_all(tmp_dir);
+}
+
+async fn self_upgrade() -> Result<()> {
+    let current_str = env!("CARGO_PKG_VERSION");
+    let current = semver::Version::parse(current_str)
+        .context("Failed to parse current version")?;
+    println!("Current version: v{}", current);
+    println!("Checking for updates...");
+
+    let client = reqwest::Client::builder()
+        .user_agent(format!("claw-guard/{}", current))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let resp = client.get(&api_url).send().await
+        .context("Failed to check for updates")?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("GitHub API returned {}", resp.status());
+    }
+
+    let release: GithubRelease = resp.json().await
+        .context("Failed to parse GitHub release")?;
+
+    let latest_str = release.tag_name.trim_start_matches('v');
+    let latest = semver::Version::parse(latest_str)
+        .context("Failed to parse latest version")?;
+
+    if latest <= current {
+        println!("\u{2714} Already up to date (v{})", current);
+        return Ok(());
+    }
+
+    println!("Latest version:  v{}", latest);
+
+    let asset_name = release_asset_name(&format!("v{}", latest))
+        .context("Unsupported platform for auto-upgrade")?;
+
+    let download_url = format!(
+        "https://github.com/{}/releases/download/{}/{}",
+        GITHUB_REPO, release.tag_name, asset_name
+    );
+    let checksums_url = format!(
+        "https://github.com/{}/releases/download/{}/checksums.txt",
+        GITHUB_REPO, release.tag_name
+    );
+
+    // Always print manual commands as fallback
+    println!("\nManual upgrade:");
+    if std::env::consts::OS == "windows" {
+        println!("  Invoke-WebRequest -Uri {} -OutFile {}", download_url, asset_name);
+        println!("  Expand-Archive {} -DestinationPath .", asset_name);
+    } else {
+        println!("  curl -LO {}", download_url);
+        println!("  tar xzf {}", asset_name);
+        println!("  chmod +x claw-guard");
+    }
+
+    // Auto-upgrade: download, verify checksum, extract, replace
+    println!("\nDownloading {}...", asset_name);
+    let dl_resp = client.get(&download_url).send().await
+        .context("Failed to download release")?;
+
+    if !dl_resp.status().is_success() {
+        anyhow::bail!("Download failed ({}). Use the manual commands above.", dl_resp.status());
+    }
+
+    let bytes = dl_resp.bytes().await
+        .context("Failed to read download")?;
+
+    // Verify SHA256 checksum if checksums.txt is available
+    if let Ok(cs_resp) = client.get(&checksums_url).send().await {
+        if cs_resp.status().is_success() {
+            if let Ok(checksums_text) = cs_resp.text().await {
+                verify_checksum(&bytes, &asset_name, &checksums_text)?;
+                println!("\u{2714} Checksum verified");
+            }
+        }
+    }
+
+    // Save to temp directory
+    let tmp_dir = std::env::temp_dir().join("claw-guard-upgrade");
+    std::fs::create_dir_all(&tmp_dir)?;
+    let archive_path = tmp_dir.join(&asset_name);
+    std::fs::write(&archive_path, &bytes)?;
+
+    // Extract
+    let extract_ok = if std::env::consts::OS == "windows" {
+        std::process::Command::new("powershell")
+            .args(["Expand-Archive", "-Force", "-Path"])
+            .arg(&archive_path)
+            .arg("-DestinationPath")
+            .arg(&tmp_dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    } else {
+        std::process::Command::new("tar")
+            .args(["xzf"])
+            .arg(&archive_path)
+            .arg("-C")
+            .arg(&tmp_dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
+
+    if !extract_ok {
+        cleanup_tmp_dir(&tmp_dir);
+        anyhow::bail!("Failed to extract archive. Use the manual commands above.");
+    }
+
+    // Find extracted binary — may be inside a subdirectory
+    let binary_name = if std::env::consts::OS == "windows" { "claw-guard.exe" } else { "claw-guard" };
+    let new_binary = find_binary_in_dir(&tmp_dir, binary_name);
+    let new_binary = match new_binary {
+        Some(p) => p,
+        None => {
+            cleanup_tmp_dir(&tmp_dir);
+            anyhow::bail!("Extracted binary not found. Use the manual commands above.");
+        }
+    };
+
+    let current_exe = std::env::current_exe()
+        .context("Failed to determine current executable path")?;
+
+    // Atomic replacement: copy new binary to a staging path next to the
+    // target, then rename (atomic on the same filesystem).
+    let staging = current_exe.with_extension("new");
+    if let Err(e) = std::fs::copy(&new_binary, &staging) {
+        cleanup_tmp_dir(&tmp_dir);
+        anyhow::bail!("Cannot stage new binary ({}). Try: sudo claw-guard --upgrade", e);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755));
+    }
+
+    if let Err(e) = std::fs::rename(&staging, &current_exe) {
+        let _ = std::fs::remove_file(&staging);
+        cleanup_tmp_dir(&tmp_dir);
+        anyhow::bail!("Cannot replace binary ({}). Try: sudo claw-guard --upgrade", e);
+    }
+
+    cleanup_tmp_dir(&tmp_dir);
+    println!("\u{2714} Upgraded to v{}", latest);
+    Ok(())
+}
+
+/// Verify SHA256 checksum of downloaded bytes against checksums.txt content.
+fn verify_checksum(bytes: &[u8], asset_name: &str, checksums_text: &str) -> Result<()> {
+    use std::io::Write;
+
+    // checksums.txt format: "<sha256>  <filename>" per line
+    let expected = checksums_text
+        .lines()
+        .find(|line| line.ends_with(asset_name))
+        .and_then(|line| line.split_whitespace().next())
+        .context("Checksum for this asset not found in checksums.txt")?;
+
+    // Compute SHA256 using shasum command
+    let mut child = std::process::Command::new("shasum")
+        .args(["-a", "256"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .context("Failed to run shasum")?;
+
+    child.stdin.take().unwrap().write_all(bytes)?;
+    let output = child.wait_with_output()?;
+    let actual = String::from_utf8_lossy(&output.stdout);
+    let actual = actual.split_whitespace().next().unwrap_or("");
+
+    if !actual.eq_ignore_ascii_case(expected) {
+        anyhow::bail!(
+            "Checksum mismatch! Expected: {}, Got: {}. Download may be corrupted.",
+            expected, actual
+        );
+    }
+    Ok(())
+}
+
+/// Recursively find a binary by name in a directory (checks one level of subdirs).
+fn find_binary_in_dir(dir: &std::path::Path, name: &str) -> Option<PathBuf> {
+    let direct = dir.join(name);
+    if direct.exists() {
+        return Some(direct);
+    }
+    // Check one level of subdirectories (e.g., claw-guard-v0.5.0-darwin-arm64/)
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let nested = entry.path().join(name);
+                if nested.exists() {
+                    return Some(nested);
+                }
+            }
+        }
+    }
+    None
 }

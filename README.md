@@ -20,13 +20,11 @@
 ## Quick Start
 
 ```sh
-# Download binary (example: macOS Apple Silicon)
-curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.4.0-darwin-arm64.tar.gz
-tar xzf claw-guard-v0.4.0-darwin-arm64.tar.gz
-chmod +x claw-guard
+# One-line install (macOS / Linux, auto-detects platform)
+curl -fsSL install9.ai/claw-guard | sh
 
 # Run audit (auto-uploads to install9, server does AI analysis)
-./claw-guard
+claw-guard
 
 # AI-powered audit with your own API key (local analysis)
 export CLAW_GUARD_API_KEY=sk-ant-xxx

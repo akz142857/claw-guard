@@ -20,13 +20,11 @@
 ## 快速开始
 
 ```sh
-# 下载二进制文件（示例：macOS Apple Silicon）
-curl -LO https://github.com/akz142857/claw-guard/releases/latest/download/claw-guard-v0.4.0-darwin-arm64.tar.gz
-tar xzf claw-guard-v0.4.0-darwin-arm64.tar.gz
-chmod +x claw-guard
+# 一键安装（macOS / Linux，自动检测平台）
+curl -fsSL install9.ai/claw-guard | sh
 
 # 运行审计（自动上传到 install9，服务端做 AI 分析）
-./claw-guard
+claw-guard
 
 # 使用自己的 API Key 做本地 AI 分析
 export CLAW_GUARD_API_KEY=sk-ant-xxx

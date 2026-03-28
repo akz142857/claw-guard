@@ -64,7 +64,7 @@ impl StaticRule for CgD003 {
         let mut recent_changes = Vec::new();
 
         // Scan last 1000 lines
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
         let start = lines.len().saturating_sub(1000);
 
         for line in &lines[start..] {

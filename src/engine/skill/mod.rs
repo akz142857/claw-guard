@@ -65,7 +65,7 @@ pub fn load_skills(dir: &Path) -> Result<Vec<Box<dyn Rule>>> {
             } else {
                 continue;
             }
-        } else if path.extension().map_or(false, |e| e == "md") {
+        } else if path.extension().is_some_and(|e| e == "md") {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
             if name.eq_ignore_ascii_case("readme") {
                 continue;

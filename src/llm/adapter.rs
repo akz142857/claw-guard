@@ -1,4 +1,4 @@
-/// Protocol adapters — unified interface for calling different LLM APIs.
+//! Protocol adapters — unified interface for calling different LLM APIs.
 
 use anyhow::{bail, Result};
 use tracing::debug;

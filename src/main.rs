@@ -1,5 +1,6 @@
 mod engine;
 mod gui;
+mod i18n;
 mod llm;
 mod platform;
 mod report;
@@ -259,8 +260,8 @@ async fn main() -> Result<()> {
     // ── --list-providers ──────────────────────────────────────────────
     if cli.list_providers {
         println!(
-            "{:<16} {:<28} {:<30} {}",
-            "PROVIDER", "DISPLAY NAME", "DEFAULT MODEL", "BASE URL"
+            "{:<16} {:<28} {:<30} BASE URL",
+            "PROVIDER", "DISPLAY NAME", "DEFAULT MODEL"
         );
         println!("{}", "-".repeat(100));
         for p in llm::providers::all_providers() {
@@ -278,8 +279,8 @@ async fn main() -> Result<()> {
     // ── --list-rules ────────────────────────────────────────────────────
     if cli.list_rules {
         println!(
-            "{:<12} {:<8} {:<22} {}",
-            "ID", "SEV", "CATEGORY", "NAME"
+            "{:<12} {:<8} {:<22} NAME",
+            "ID", "SEV", "CATEGORY"
         );
         println!("{}", "-".repeat(76));
         for rule in &all_rules {
@@ -379,24 +380,22 @@ async fn main() -> Result<()> {
     // If local analysis was skipped (no API key), ask the server to
     // analyze during upload (analyze=true query param).
     //
-    if !cli.no_upload {
-        if agent_id.is_some() {
-            let need_remote_analysis = !local_analysis_done;
-            let upload_url = format!("{}/reports", API_URL.trim_end_matches('/'));
-            info!("Uploading report to {}...", upload_url);
-            match upload_report(&upload_url, &report, need_remote_analysis).await {
-                Ok(upload_resp) => {
-                    // If server returned analysis, merge it into the report
-                    if let Some(analysis) = upload_resp.analysis {
-                        report.analysis = Some(analysis);
-                    }
-                    if upload_resp.web_url.is_some() {
-                        report.web_url = upload_resp.web_url;
-                    }
-                    println!("\n\u{2714} Report: https://install9.ai/reports/{}", upload_resp.report_id);
+    if !cli.no_upload && agent_id.is_some() {
+        let need_remote_analysis = !local_analysis_done;
+        let upload_url = format!("{}/reports", API_URL.trim_end_matches('/'));
+        info!("Uploading report to {}...", upload_url);
+        match upload_report(&upload_url, &report, need_remote_analysis).await {
+            Ok(upload_resp) => {
+                // If server returned analysis, merge it into the report
+                if let Some(analysis) = upload_resp.analysis {
+                    report.analysis = Some(analysis);
                 }
-                Err(e) => error!("Failed to upload report: {}", e),
+                if upload_resp.web_url.is_some() {
+                    report.web_url = upload_resp.web_url;
+                }
+                println!("\n\u{2714} Report: https://install9.ai/reports/{}", upload_resp.report_id);
             }
+            Err(e) => error!("Failed to upload report: {}", e),
         }
     }
 

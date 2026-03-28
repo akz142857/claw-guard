@@ -1,4 +1,4 @@
-/// Static provider registry — maps provider names to default configurations.
+//! Static provider registry — maps provider names to default configurations.
 
 /// How the API key is passed to the provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

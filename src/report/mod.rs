@@ -3,7 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditReport {
     pub version: String,
     pub timestamp: String,
@@ -22,7 +22,7 @@ pub struct AuditReport {
     pub web_url: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportSummary {
     pub total_rules: usize,
     pub total_findings: usize,
@@ -36,7 +36,7 @@ pub struct ReportSummary {
     pub score: u8, // 0-100, higher is better
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategorySummary {
     pub category: Category,
     pub label: String,
@@ -375,7 +375,7 @@ fn compute_weighted_score(findings: &[Finding]) -> u8 {
 
     // Step 2: Group by category, compute per-category pass rate
     let mut cat_totals: HashMap<Category, (f64, f64)> = HashMap::new(); // (passed_weight, total_weight)
-    for (_rule_id, (cat, sev, status)) in &rule_map {
+    for (cat, sev, status) in rule_map.values() {
         let w = severity_weight(sev);
         let entry = cat_totals.entry(*cat).or_insert((0.0, 0.0));
         entry.1 += w; // total

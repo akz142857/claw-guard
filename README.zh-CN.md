@@ -17,6 +17,10 @@
   <a href="README.md">English</a>
 </p>
 
+<p align="center">
+  <img src="assets/image.png" width="720" alt="claw-guard 主界面">
+</p>
+
 ## 快速开始
 
 ```sh

@@ -17,6 +17,10 @@
   <a href="README.zh-CN.md">中文文档</a>
 </p>
 
+<p align="center">
+  <img src="assets/image.png" width="720" alt="claw-guard main interface">
+</p>
+
 ## Quick Start
 
 ```sh
